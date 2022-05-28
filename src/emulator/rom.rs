@@ -190,8 +190,6 @@ impl Rom {
 
         // ROM size flag
         let size_enum = data[0x0148];
-        let mut size_bytes: u32 = 0;
-        let mut bank_select_mask = 0;
         let (size_bytes, bank_select_mask): (u32, u32) = match size_enum {
             0x00 => (32768, 0x00),
             0x01 => (65536, 0x03),
