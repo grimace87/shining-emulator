@@ -13,7 +13,7 @@ pub struct Rom {
     pub mbc: Mbc,
     pub size_bytes: u32,
     bank_select_mask: u32,
-    pub sram_size_bytes: u32
+    pub sram_size_bytes: usize
 }
 
 #[derive(PartialEq)]

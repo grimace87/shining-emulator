@@ -1,5 +1,6 @@
 
 mod cpu;
+mod external_ram;
 mod gpu;
 pub mod rom;
 mod mem;
