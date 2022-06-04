@@ -1,4 +1,4 @@
-use crate::emulator::mem::MemBus;
+use crate::emulator::mem::{MemoryMap, MemBus};
 use std::cmp::min;
 
 const SGBCOM_PAL01: u32     = 0x00;
@@ -101,7 +101,7 @@ impl Sgb {
     /// Signal an updated value on IO port 0x00.
     /// Packets are transferred by sending specific signals along this channel.
     /// Bits P15 and P14 are the only ones considered here.
-    pub fn write_input_signal(&mut self, byte: u8, mem_bus: &mut MemBus) {
+    pub fn write_input_signal<M: MemoryMap>(&mut self, byte: u8, mem_bus: &mut M) {
 
         let signal_bits = byte & 0x30;
 
@@ -181,7 +181,7 @@ impl Sgb {
         }
     }
 
-    fn check_packets(&mut self, mem_bus: &mut MemBus) {
+    fn check_packets<M: MemoryMap>(&mut self, mem_bus: &mut M) {
         match self.command {
             SGBCOM_PAL01 => self.finalise_palette_load(0, 1),
             SGBCOM_PAL23 => self.finalise_palette_load(2, 3),
@@ -469,8 +469,9 @@ impl Sgb {
         }
     }
 
-    fn finalise_palette_transfer(&mut self, mem_bus: &mut MemBus) {
-        if (mem_bus.io_ports[0x40] & 0x80) != 0 {
+    fn finalise_palette_transfer<M: MemoryMap>(&mut self, mem_bus: &mut M) {
+        let display_flags = mem_bus.read_address(0xff40);
+        if (display_flags & 0x80) != 0 {
             self.map_vram_for_transfer_op(mem_bus);
             let mut source_index: usize = 0;
             for palette_no in 0..512 {
@@ -505,15 +506,16 @@ impl Sgb {
     // Assumes a certain display configuration and does not account for variances
     // This includes display enable, background not scrolled, window and sprites not on-screen,
     // and the BGP palette register has a certain value (possibly 0xe4)
-    fn map_vram_for_transfer_op(&mut self, mem_bus: &mut MemBus) {
+    fn map_vram_for_transfer_op<M: MemoryMap>(&mut self, mem_bus: &mut M) {
 
-        let use_low_chr_offset = (mem_bus.io_ports[0x40] & 0x10) != 0;
+        let display_flags = mem_bus.read_address(0xff40);
+        let use_low_chr_offset = (display_flags & 0x10) != 0;
         let (chars_start, char_code_inverter) = match use_low_chr_offset {
             true => (0 as usize, 0 as usize),
             false => (0x0800 as usize, 0x0080 as usize)
         };
 
-        let use_high_map_offset = (mem_bus.io_ports[0x40] & 0x08) != 0;
+        let use_high_map_offset = (display_flags & 0x08) != 0;
         let map_start = match use_high_map_offset {
             true => 0x1c00 as usize,
             false => 0x1800 as usize
@@ -523,11 +525,12 @@ impl Sgb {
             for chr_x in 0..20 {
                 // Copy 16 bytes of the character tile in this location
                 let map_index = chr_y * 32 + chr_x;
-                let zero_based_tile_no = (mem_bus.vram[map_start + map_index] as usize) ^ char_code_inverter;
+                let tile_no_byte = mem_bus.read_address(0x8000 + map_start + map_index);
+                let zero_based_tile_no = (tile_no_byte as usize) ^ char_code_inverter;
                 let mut chars_data_start_index = chars_start + zero_based_tile_no * 16;
                 for byte_no in 0..16 {
                     self.mapped_vram_for_trn_op[16 * (chr_y * 20 + chr_x) + byte_no] =
-                        mem_bus.vram[chars_data_start_index];
+                        mem_bus.read_address(0x8000 + chars_data_start_index);
                     chars_data_start_index += 1;
                 }
             }
@@ -537,9 +540,10 @@ impl Sgb {
 
 #[cfg(test)]
 mod tests {
-    use super::{Sgb, MemBus};
+    use crate::emulator::mem::{MemoryMap, SimpleMemoryMap};
+    use crate::emulator::sgb::Sgb;
 
-    fn send_byte(sgb: &mut Sgb, byte: u8, mem_bus: &mut MemBus) {
+    fn send_byte<M: MemoryMap>(sgb: &mut Sgb, byte: u8, mem_bus: &mut M) {
         let bits_as_bytes: [u8; 8] = [
             (byte & 0x01),
             (byte & 0x02 ) >> 1,
@@ -560,7 +564,7 @@ mod tests {
 
     fn send_packet(sgb: &mut Sgb, bytes: [u8; 16]) {
 
-        let mut mem_bus = MemBus::new();
+        let mut mem_bus = SimpleMemoryMap::new();
 
         // Reset signal
         sgb.write_input_signal(0x30, &mut mem_bus);

@@ -35,21 +35,6 @@ mod test {
             .unwrap();
         let rom = Rom::new_from_data(data);
         assert!(rom.valid);
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::emulator::rom::Rom;
-    use crate::files::local_rom_data;
-    use crate::ROM_NAME;
-
-    #[test]
-    fn rom_loads() {
-        let data = local_rom_data(ROM_NAME)
-            .unwrap();
-        let rom = Rom::new_from_data(data);
-        assert!(rom.valid);
         assert!(!rom.cgb_flag);
         assert!(!rom.sgb_flag);
         assert!(rom.has_sram);
