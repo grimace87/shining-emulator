@@ -13,19 +13,19 @@ use mem::MemBus;
 use gpu::Gpu;
 use rom::Rom;
 use sgb::Sgb;
-use audio::Audio;
+use audio::{AudioController, DummyAudioController};
 use input::Input;
 
 use std::cell::RefCell;
 
 const GB_FREQ: u64 = 4194304;
 
-pub struct Emulator {
+pub struct Emulator<A: AudioController> {
     cpu: Cpu,
     mem_bus: RefCell<MemBus>,
     gpu: Gpu,
     sgb: Sgb,
-    audio: Audio,
+    audio: A,
     input: Input,
     wram: Vec<u8>,
     vram: Vec<u8>,
@@ -38,7 +38,7 @@ pub struct Emulator {
     current_clock_multiplier_combo: i32
 }
 
-impl Emulator {
+impl Emulator<DummyAudioController> {
 
     pub fn load_rom(rom: Rom) -> Self {
         let mut emulator = Self {
@@ -46,7 +46,7 @@ impl Emulator {
             mem_bus: RefCell::new(MemBus::new(rom)),
             gpu: Gpu::new(),
             sgb: Sgb::new(),
-            audio: Audio::new(),
+            audio: DummyAudioController::new(),
             input: Input::new(),
             wram: Vec::with_capacity(8 * 4096),
             vram: Vec::with_capacity(2 * 8192),
@@ -100,7 +100,7 @@ impl Emulator {
         self.cpu.reset(sgb_flag, cgb_flag);
         self.gpu.reset();
         self.sgb.reset();
-        self.audio.reset();
+        self.audio.reset(GB_FREQ);
         self.input.reset();
 
         // Reset clock multipliers

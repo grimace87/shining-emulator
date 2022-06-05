@@ -1,4 +1,4 @@
-use crate::emulator::mem::{MemoryMap, MemBus};
+use crate::emulator::mem::MemoryMap;
 use std::cmp::min;
 
 const SGBCOM_PAL01: u32     = 0x00;
