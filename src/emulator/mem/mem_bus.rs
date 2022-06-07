@@ -1,4 +1,5 @@
 
+use crate::emulator::mem::MemoryMap;
 use crate::emulator::rom::Rom;
 
 pub struct MemBus {
@@ -43,5 +44,16 @@ impl MemBus {
         self.wram_bank_offset = 0x1000;
         self.vram_bank_offset = 0x0000;
 
+    }
+}
+
+impl MemoryMap for MemBus {
+
+    fn read_address(&self, address: usize) -> u8 {
+        todo!()
+    }
+
+    fn write_address(&mut self, address: usize, byte: u8) {
+        todo!()
     }
 }

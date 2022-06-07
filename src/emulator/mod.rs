@@ -25,7 +25,7 @@ pub struct Emulator<A: AudioController> {
     mem_bus: RefCell<MemBus>,
     gpu: Gpu,
     sgb: Sgb,
-    audio: A,
+    audio: RefCell<A>,
     input: Input,
     wram: Vec<u8>,
     vram: Vec<u8>,
@@ -46,7 +46,7 @@ impl Emulator<DummyAudioController> {
             mem_bus: RefCell::new(MemBus::new(rom)),
             gpu: Gpu::new(),
             sgb: Sgb::new(),
-            audio: DummyAudioController::new(),
+            audio: RefCell::new(DummyAudioController::new()),
             input: Input::new(),
             wram: Vec::with_capacity(8 * 4096),
             vram: Vec::with_capacity(2 * 8192),
@@ -83,10 +83,14 @@ impl Emulator<DummyAudioController> {
             self.accumulated_clocks = clocks_cap;
         }
 
-        // TODO - Copy user inputs to CPU here
+        self.cpu.set_input_values(self.input.key_dir, self.input.key_but);
 
-        // TODO
-        // self.cpu.execute_accumulated_clocks(self.accumulated_clocks);
+        let mut mem_bus = self.mem_bus.borrow_mut();
+        let mut audio = self.audio.borrow_mut();
+        self.cpu.execute_accumulated_clocks::<MemBus, DummyAudioController>(
+            self.accumulated_clocks,
+            &mut mem_bus,
+            &mut audio);
     }
 
     pub fn reset(&mut self) {
@@ -100,7 +104,7 @@ impl Emulator<DummyAudioController> {
         self.cpu.reset(sgb_flag, cgb_flag);
         self.gpu.reset();
         self.sgb.reset();
-        self.audio.reset(GB_FREQ);
+        self.audio.borrow_mut().reset(GB_FREQ);
         self.input.reset();
 
         // Reset clock multipliers
