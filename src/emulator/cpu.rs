@@ -26,13 +26,18 @@ pub struct Cpu {
     is_paused: bool,
     ime: bool,
     divider_count: u32,
+    timer_count: u32,
+    timer_inc_time: u32,
+    timer_running: bool,
+    last_ly_compare: u32,
     current_key_dir: u8,
-    current_key_but: u8
+    current_key_but: u8,
+    key_state_changed: bool
 }
 
 impl Cpu {
 
-    pub fn new(sgb_flag: bool, cgb_flag: bool) -> Self {
+    pub fn new(cgb_flag: bool) -> Self {
         let mut cpu = Self {
             pc: 0,
             sp: 0,
@@ -49,12 +54,17 @@ impl Cpu {
             is_paused: false,
             ime: false,
             divider_count: 0,
+            timer_count: 0,
+            timer_inc_time: 0,
+            timer_running: false,
+            last_ly_compare: 0,
             current_key_dir: 0x0f,
-            current_key_but: 0x0f
+            current_key_but: 0x0f,
+            key_state_changed: false
         };
 
         // Return object ready to run
-        cpu.reset(sgb_flag, cgb_flag);
+        cpu.reset(cgb_flag);
         cpu
     }
 
@@ -62,7 +72,18 @@ impl Cpu {
         self.is_running = false;
     }
 
-    pub fn reset(&mut self, sgb_flag: bool, cgb_flag: bool) {
+    pub fn reset(&mut self, cgb_flag: bool) {
+
+        self.is_running = true;
+        self.is_paused = false;
+        self.ime = false;
+        self.mode = Mode::Running;
+        self.divider_count = 0;
+        self.timer_count = 0;
+        self.timer_inc_time = 1024;
+        self.timer_running = false;
+        self.last_ly_compare = 1;
+        self.key_state_changed = false;
 
         // Set various state
         self.pc = 0x0100;
@@ -78,14 +99,15 @@ impl Cpu {
         // Conditional state
         if cgb_flag {
             self.a = 0x11;
-        } else if sgb_flag {
-            self.a = 0x01;
         } else {
             self.a = 0x01;
         }
     }
 
     pub fn set_input_values(&mut self, key_dir: u8, key_but: u8) {
+        if key_dir != self.current_key_dir || key_but != self.current_key_but {
+            self.key_state_changed = true;
+        }
         self.current_key_dir = key_dir;
         self.current_key_but = key_but;
     }

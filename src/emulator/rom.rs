@@ -1,4 +1,6 @@
 
+use crate::emulator::external_ram::Sram;
+
 #[derive(Default)]
 pub struct Rom {
     pub valid: bool,
@@ -236,8 +238,6 @@ impl Rom {
             }
         };
 
-        // TODO: if has_battery then open the backing file
-
         // Check the checksum value; print message if it fails
         // 0x4a - 0x4c contain a japanese designation, an old licensee number and a version number
         // 0x4d is the header checksum. Game won't work if it checks incorrectly
@@ -269,6 +269,19 @@ impl Rom {
             size_bytes,
             bank_select_mask,
             sram_size_bytes
+        }
+    }
+
+    pub fn get_sram(&self) -> Option<Sram> {
+        if !self.has_sram {
+            return None;
+        }
+        match Sram::new(&self) {
+            Ok(sram) => Some(sram),
+            Err(e) => {
+                println!("Error opening SRAM: {:?}", e);
+                None
+            }
         }
     }
 }

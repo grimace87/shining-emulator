@@ -85,17 +85,16 @@ impl Sgb {
         self.no_players = 1;
         self.no_packets_sent = 0;
         self.no_packets_to_send = 0;
-        self.read_joypad_id = 0;
+        self.read_joypad_id = 0x0c;
 
         self.command_bytes.iter_mut().for_each(|packet| {
-            packet.iter_mut().for_each(|word| *word = 0);
+            packet.fill(0);
         });
-        self.command_bits.iter_mut().for_each(|byte| *byte = 0);
-        self.mono_data.iter_mut().for_each(|word| *word = 0);
-        self.mono_data.iter_mut().for_each(|byte| *byte = 0);
-        self.palettes_abgr.iter_mut().for_each(|word| *word = 0);
-        self.sys_palettes.iter_mut().for_each(|word| *word = 0);
-        self.chr_palettes.iter_mut().for_each(|word| *word = 0);
+        self.command_bits.fill(0);
+        self.mono_data.fill(0);
+        self.palettes_abgr.fill(0);
+        self.sys_palettes.fill(0);
+        self.chr_palettes.fill(0);
     }
 
     /// Signal an updated value on IO port 0x00.

@@ -19,6 +19,8 @@ use input::Input;
 use std::cell::RefCell;
 
 const GB_FREQ: u64 = 4194304;
+const SGB_FREQ: u64 = 4295454;
+const CGB_FREQ: u64 = 8400000;
 
 pub struct Emulator<A: AudioController> {
     cpu: Cpu,
@@ -42,7 +44,7 @@ impl Emulator<DummyAudioController> {
 
     pub fn load_rom(rom: Rom) -> Self {
         let mut emulator = Self {
-            cpu: Cpu::new(rom.sgb_flag, rom.cgb_flag),
+            cpu: Cpu::new(rom.cgb_flag),
             mem_bus: RefCell::new(MemBus::new(rom)),
             gpu: Gpu::new(),
             sgb: Sgb::new(),
@@ -101,7 +103,8 @@ impl Emulator<DummyAudioController> {
         };
 
         // Reset component states
-        self.cpu.reset(sgb_flag, cgb_flag);
+        self.cpu.reset(cgb_flag);
+        self.mem_bus.borrow_mut().reset(sgb_flag);
         self.gpu.reset();
         self.sgb.reset();
         self.audio.borrow_mut().reset(GB_FREQ);
@@ -112,7 +115,13 @@ impl Emulator<DummyAudioController> {
         self.clock_multiply = 1;
         self.clock_divide = 1;
 
-        // Initialise control variables
-
+        // Conditional state
+        if cgb_flag {
+            self.cpu_clock_frequency = GB_FREQ;
+        } else if sgb_flag {
+            self.cpu_clock_frequency = SGB_FREQ;
+        } else {
+            self.cpu_clock_frequency = GB_FREQ;
+        }
     }
 }
