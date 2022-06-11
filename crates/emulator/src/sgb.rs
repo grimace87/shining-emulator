@@ -539,8 +539,8 @@ impl Sgb {
 
 #[cfg(test)]
 mod tests {
-    use crate::emulator::mem::{MemoryMap, SimpleMemoryMap};
-    use crate::emulator::sgb::Sgb;
+    use crate::mem::{MemoryMap, SimpleMemoryMap};
+    use crate::sgb::Sgb;
 
     fn send_byte<M: MemoryMap>(sgb: &mut Sgb, byte: u8, mem_bus: &mut M) {
         let bits_as_bytes: [u8; 8] = [

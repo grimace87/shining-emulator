@@ -103,4 +103,28 @@ impl MemoryMap for MemBus {
     fn write_address(&mut self, address: usize, byte: u8) {
         todo!()
     }
+
+    fn read_address_16(&self, address: usize) -> (u8, u8) {
+        todo!()
+    }
+
+    fn write_address_16(&mut self, address: usize, bytes: (u8, u8)) {
+        todo!()
+    }
+
+    fn set_access_vram(&mut self, accessible: bool) {
+        self.access_vram = accessible;
+    }
+
+    fn set_access_oam(&mut self, accessible: bool) {
+        self.access_oam = accessible;
+    }
+
+    fn perform_and(&mut self, address: usize, byte: u8) {
+        self.write_address(address, self.read_address(address) & byte);
+    }
+
+    fn perform_or(&mut self, address: usize, byte: u8) {
+        self.write_address(address, self.read_address(address) | byte);
+    }
 }

@@ -29,7 +29,7 @@ const CGB_FREQ: u64 = 8400000;
 pub struct Emulator<A: AudioController> {
     cpu: Cpu,
     mem_bus: RefCell<MemBus>,
-    gpu: Gpu,
+    gpu: RefCell<Gpu>,
     sgb: Sgb,
     audio: RefCell<A>,
     input: Input,
@@ -50,7 +50,7 @@ impl Emulator<DummyAudioController> {
         let mut emulator = Self {
             cpu: Cpu::new(rom.cgb_flag),
             mem_bus: RefCell::new(MemBus::new(rom)),
-            gpu: Gpu::new(),
+            gpu: RefCell::new(Gpu::new()),
             sgb: Sgb::new(),
             audio: RefCell::new(DummyAudioController::new()),
             input: Input::new(),
@@ -93,10 +93,12 @@ impl Emulator<DummyAudioController> {
 
         let mut mem_bus = self.mem_bus.borrow_mut();
         let mut audio = self.audio.borrow_mut();
-        self.cpu.execute_accumulated_clocks::<MemBus, DummyAudioController>(
-            self.accumulated_clocks,
+        let mut gpu = self.gpu.borrow_mut();
+        self.cpu.emulate_clock_cycles::<MemBus, DummyAudioController>(
+            self.accumulated_clocks as i64,
             &mut mem_bus,
-            &mut audio);
+            &mut audio,
+            &mut gpu);
     }
 
     pub fn reset(&mut self) {
@@ -109,7 +111,7 @@ impl Emulator<DummyAudioController> {
         // Reset component states
         self.cpu.reset(cgb_flag);
         self.mem_bus.borrow_mut().reset(sgb_flag);
-        self.gpu.reset();
+        self.gpu.borrow_mut().reset();
         self.sgb.reset();
         self.audio.borrow_mut().reset(GB_FREQ);
         self.input.reset();
