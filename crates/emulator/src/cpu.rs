@@ -1,8 +1,6 @@
 
-use crate::emulator::{
-    mem::MemoryMap,
-    audio::AudioController
-};
+use crate::mem::MemoryMap;
+use crate::audio::AudioController;
 
 enum Mode {
     Running,

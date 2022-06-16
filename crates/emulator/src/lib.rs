@@ -2,18 +2,22 @@
 mod cpu;
 mod external_ram;
 mod gpu;
-pub mod rom;
+mod rom;
 mod mem;
 mod sgb;
 mod audio;
 mod input;
 
+#[cfg(test)]
+mod tests;
+
+pub use audio::{AudioController, DummyAudioController};
+pub use rom::Rom;
+
 use cpu::Cpu;
 use mem::MemBus;
 use gpu::Gpu;
-use rom::Rom;
 use sgb::Sgb;
-use audio::{AudioController, DummyAudioController};
 use input::Input;
 
 use std::cell::RefCell;
@@ -72,7 +76,7 @@ impl Emulator<DummyAudioController> {
 
     }
 
-    fn do_work(&mut self, time_diff_millis: u64) {
+    pub fn do_work(&mut self, time_diff_millis: u64) {
 
         let frequency = self.cpu_clock_frequency as i64;
         let adjusted_frequency =

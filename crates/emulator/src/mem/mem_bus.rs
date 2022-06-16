@@ -1,7 +1,7 @@
 
-use crate::emulator::mem::MemoryMap;
-use crate::emulator::rom::Rom;
-use crate::emulator::external_ram::Sram;
+use crate::mem::MemoryMap;
+use crate::rom::Rom;
+use crate::external_ram::Sram;
 
 pub struct MemBus {
     pub rom: Rom,

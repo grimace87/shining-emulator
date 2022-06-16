@@ -1,0 +1,34 @@
+[package]
+name = "mobile"
+version = "0.1.0"
+authors = ["Thomas <thomasr1987@gmail.com>"]
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+bevy = { workspace = true }
+app = { path = "../app" }
+
+[package.metadata.android]
+package = "com.shininggrimace.emulator"
+build_targets = ["aarch64-linux-android"]
+assets = "../desktop/assets"
+
+[package.metadata.android.sdk]
+min_sdk_version = 24
+target_sdk_version = 31
+
+[[package.metadata.android.uses_feature]]
+name = "android.hardware.vulkan.level"
+required = true
+version = 1
+
+[package.metadata.android.application]
+debuggable = false
+label = "Strength Beyond Fear"
+
+[package.metadata.android.application.activity]
+launch_mode = "singleInstance"
+orientation = "landscape"

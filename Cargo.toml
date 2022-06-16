@@ -1,9 +1,13 @@
-[package]
-name = "shining-emulator"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["crates/*"]
+default-members = ["crates/desktop"]
+resolver = "2"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.dev]
+opt-level = 1
 
-[dependencies]
-dirs = "4.0.0"
+[profile.dev.package."*"]
+opt-level = 3
+
+[workspace.dependencies]
+bevy = { version = "0.10.1", features = ["jpeg"] }

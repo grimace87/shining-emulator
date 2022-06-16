@@ -1,5 +1,5 @@
 
-use crate::emulator::external_ram::Sram;
+use crate::external_ram::Sram;
 
 #[derive(Default)]
 pub struct Rom {

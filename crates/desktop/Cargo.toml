@@ -1,0 +1,9 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+authors = ["Thomas <thomasr1987@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true }
+app = { path = "../app" }

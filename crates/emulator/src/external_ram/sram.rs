@@ -1,6 +1,6 @@
 
-use crate::emulator::rom::Rom;
-use crate::emulator::external_ram::ExternalRam;
+use crate::rom::Rom;
+use crate::external_ram::ExternalRam;
 
 use dirs::home_dir;
 use std::fs::File;
