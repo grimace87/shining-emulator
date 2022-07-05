@@ -1,4 +1,6 @@
 
+mod filter;
+
 enum Mode {
     HBlank,
     VBlank,
