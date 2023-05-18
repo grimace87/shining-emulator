@@ -156,7 +156,7 @@ impl Sgb {
 
     fn check_byte(&mut self) {
 
-        // I assume this is what we want?
+        // TODO - Make this more graceful
         assert_eq!(self.read_command_bits, 8);
 
         // Copied bits sent into byte and increment byte counter
@@ -531,6 +531,22 @@ impl Sgb {
                     self.mapped_vram_for_trn_op[16 * (chr_y * 20 + chr_x) + byte_no] =
                         mem_bus.read_address(0x8000 + chars_data_start_index);
                     chars_data_start_index += 1;
+                }
+            }
+        }
+    }
+
+    pub fn colourise_frame(&self, image_data: &mut [u32]) {
+        for chrx in 0..20 {
+            for chry in 0..18 {
+                let palette_number = self.chr_palettes[chry * 20 + chrx];
+                let palette_index = palette_number as usize * 4;
+                let x_max = 8 * chrx + 8;
+                let y_max = 8 * chry + 8;
+                for px in (8 * chrx)..x_max {
+                    for py in (8 * chry)..y_max {
+                        image_data[py * 160 + px] = self.palettes_abgr[palette_index + self.mono_data[160 * py + px] as usize];
+                    }
                 }
             }
         }
