@@ -13,6 +13,7 @@ const CONST_THREE: usize = 3;
 
 pub struct XbrParams {
     rgb_to_yuv: Vec<u32>,
+    scale: usize,
     pub input_width: usize,
     pub input_height: usize,
     pub input: RefCell<Vec<u32>>,
@@ -34,6 +35,7 @@ impl XbrParams {
             vec![0; input_width * scale_factor * input_height * scale_factor];
         Self {
             rgb_to_yuv: Self::generate_rgb_to_yuv_conversion(),
+            scale: scale_factor,
             input_width,
             input_height,
             input: RefCell::new(input_buffer),
@@ -87,18 +89,24 @@ impl XbrParams {
         self.pixel_difference(a, b) < 155
     }
 
+    // Input and output values here contain components A-Y-U-V.
+    // Mask input values into 2 sets of 2 components each where each set has values in nibbles 0 and 2.
+    // Operations are saved by processing 2 components at a time this way.
+    // Shift and or the results together as needed to form the output values.
     fn alpha_blend_base(a: usize, b: usize, m: usize, s: usize) -> usize {
-        (
-            PART_MASK & (
-                ((a) & PART_MASK) +
-                    ((((b & PART_MASK).wrapping_sub(a & PART_MASK)) * (m)) >> (s))
-            )
-        ) | (
-            (PART_MASK & (
-                (((a) >> 8) & PART_MASK) +
-                    ((((((b) >> 8) & PART_MASK).wrapping_sub((a >> 8) & PART_MASK)) * (m)) >> (s))
-            )) << 8
-        )
+
+        let a_x_y_x_v = a & PART_MASK;
+        let a_x_a_x_u = (a >> 8) & PART_MASK;
+        let b_x_y_x_v = b & PART_MASK;
+        let b_x_a_x_u = (b >> 8) & PART_MASK;
+
+        let del_x_y_x_v = PART_MASK & b_x_y_x_v.wrapping_sub(a_x_y_x_v);
+        let del_x_a_x_u = PART_MASK & b_x_a_x_u.wrapping_sub(a_x_a_x_u);
+
+        let out_x_y_x_v = PART_MASK & (a_x_y_x_v + ((del_x_y_x_v * m) >> s));
+        let out_x_a_x_u = PART_MASK & (a_x_a_x_u + ((del_x_a_x_u * m) >> s));
+
+        out_x_y_x_v | (out_x_a_x_u << 8)
     }
 
     fn alpha_blend_32_w(a: u32, b: usize) -> usize {
@@ -544,15 +552,10 @@ impl XbrParams {
         }
     }
 
-    pub fn xbr_filter_xbr2x(&mut self) {
-        self.xbr_filter(2);
-    }
-
-    pub fn xbr_filter_xbr3x(&mut self) {
-        self.xbr_filter(3);
-    }
-
-    pub fn xbr_filter_xbr4x(&mut self) {
-        self.xbr_filter(4);
+    pub fn perform_filter(&mut self) {
+        match self.scale {
+            2..=4 => self.xbr_filter(self.scale),
+            _ => {}
+        }
     }
 }
