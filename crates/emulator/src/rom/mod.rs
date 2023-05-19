@@ -1,4 +1,7 @@
 
+#[cfg(test)]
+mod tests;
+
 use crate::external_ram::Sram;
 
 #[derive(Default)]
@@ -18,19 +21,13 @@ pub struct Rom {
     pub sram_size_bytes: usize
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Default)]
 pub enum Mbc {
-    None,
+    #[default] None,
     Mbc1,
     Mbc2,
     Mbc3,
     Mbc5
-}
-
-impl Default for Mbc {
-    fn default() -> Self {
-        Mbc::None
-    }
 }
 
 const OFFICIAL_HEADER: [u8; 48] = [
