@@ -13,6 +13,9 @@ const GB_FREQ: u64 = 4194304;
 const SGB_FREQ: u64 = 4295454;
 const CGB_FREQ: u64 = 8400000;
 
+const CLOCK_MULTIPLIERS: [i64; 21] = [  1,  1,  1, 1, 1, 2, 1, 4, 2, 4, 1, 5, 3, 7, 2, 5, 3, 5, 8, 12, 20 ];
+const CLOCK_DIVISORS: [i64; 21] =    [ 20, 12,  8, 5, 3, 5, 2, 7, 3, 5, 1, 4, 2, 4, 1, 2, 1, 1, 1,  1,  1 ];
+
 pub struct Emulator<A: AudioController> {
     cpu: Cpu,
     mem_bus: RefCell<MemBus>,
@@ -28,7 +31,7 @@ pub struct Emulator<A: AudioController> {
     accumulated_clocks: u64,
     clock_multiply: i64,
     clock_divide: i64,
-    current_clock_multiplier_combo: i32
+    current_clock_multiplier_combo: usize
 }
 
 impl Emulator<DummyAudioController> {
@@ -61,6 +64,22 @@ impl Emulator<DummyAudioController> {
 
     pub fn stop(&mut self) {
 
+    }
+
+    pub fn speed_up(&mut self) {
+        if self.current_clock_multiplier_combo < 20 {
+            self.current_clock_multiplier_combo += 1;
+            self.clock_multiply = CLOCK_MULTIPLIERS[self.current_clock_multiplier_combo];
+            self.clock_divide = CLOCK_DIVISORS[self.current_clock_multiplier_combo];
+        }
+    }
+
+    pub fn slow_down(&mut self) {
+        if self.current_clock_multiplier_combo > 0 {
+            self.current_clock_multiplier_combo -= 1;
+            self.clock_multiply = CLOCK_MULTIPLIERS[self.current_clock_multiplier_combo];
+            self.clock_divide = CLOCK_DIVISORS[self.current_clock_multiplier_combo];
+        }
     }
 
     pub fn do_work(&mut self, time_diff_millis: u64) {
