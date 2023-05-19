@@ -9,8 +9,8 @@ pub struct MemBus {
     pub vram: Vec<u8>,
     pub sram: Option<Sram>,
     pub io_ports: Vec<u8>,
-    pub access_oam: bool,
-    pub access_vram: bool,
+    vram_protected: bool,
+    oam_protected: bool,
     rom_bank_offset: usize,
     wram_bank_offset: usize,
     vram_bank_offset: usize
@@ -26,8 +26,8 @@ impl MemBus {
             vram: Vec::with_capacity(2 * 8192),
             sram,
             io_ports: Vec::with_capacity(256),
-            access_oam: false,
-            access_vram: false,
+            vram_protected: false,
+            oam_protected: false,
             rom_bank_offset: 0,
             wram_bank_offset: 0,
             vram_bank_offset: 0
@@ -46,8 +46,8 @@ impl MemBus {
         self.io_ports.fill(0);
 
         // Set various state
-        self.access_oam = true;
-        self.access_vram = true;
+        self.vram_protected = false;
+        self.oam_protected = false;
         self.rom_bank_offset = 0x4000;
         self.wram_bank_offset = 0x1000;
         self.vram_bank_offset = 0x0000;
@@ -112,12 +112,12 @@ impl MemoryMap for MemBus {
         todo!()
     }
 
-    fn set_access_vram(&mut self, accessible: bool) {
-        self.access_vram = accessible;
+    fn set_vram_protection(&mut self, protected: bool) {
+        self.vram_protected = protected;
     }
 
-    fn set_access_oam(&mut self, accessible: bool) {
-        self.access_oam = accessible;
+    fn set_oam_protection(&mut self, protected: bool) {
+        self.oam_protected = protected;
     }
 
     fn perform_and(&mut self, address: usize, byte: u8) {

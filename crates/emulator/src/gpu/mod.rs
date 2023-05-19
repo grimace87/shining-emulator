@@ -1,7 +1,7 @@
 
-use crate::mem::MemoryMap;
-
 mod filter;
+
+use crate::mem::MemoryMap;
 
 enum Mode {
     HBlank,
@@ -75,8 +75,8 @@ impl Gpu {
         if self.blanked_screen {
             return;
         }
-        mem_bus.set_access_oam(true);
-        mem_bus.set_access_vram(true);
+        mem_bus.set_oam_protection(false);
+        mem_bus.set_vram_protection(false);
         mem_bus.write_address(0xff44, 0);
         self.time_in_current_mode = 0;
         self.mode = Mode::ScanOam;
