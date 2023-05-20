@@ -1,8 +1,6 @@
 
 mod filter;
 
-use crate::mem::MemBus;
-
 enum Mode {
     HBlank,
     VBlank,
@@ -50,7 +48,7 @@ impl Gpu {
         self.cgb_obj_pal_index = 0;
     }
 
-    pub fn emulate_clock_cycles(&mut self, clock_cycles: i64, mem_bus: &mut MemBus) {
+    pub fn emulate_clock_cycles(&mut self, clock_cycles: i64) {
         // Double CPU speed mode affects instruction rate but should not affect GPU speed
         self.time_in_current_mode += (clock_cycles / (self.clock_factor as i64)) as u32;
         match self.mode {
@@ -71,13 +69,14 @@ impl Gpu {
         }
     }
 
-    pub fn on_display_disabled(&mut self, mem_bus: &mut MemBus) {
+    pub fn is_screen_blanked(&self) -> bool {
+        self.blanked_screen
+    }
+
+    pub fn on_display_disabled(&mut self) {
         if self.blanked_screen {
             return;
         }
-        mem_bus.set_oam_protection(false);
-        mem_bus.set_vram_protection(false);
-        mem_bus.write_address(0xff44, 0);
         self.time_in_current_mode = 0;
         self.mode = Mode::ScanOam;
         self.blanked_screen = true;

@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod tests;
 
-use crate::cpu::CpuType;
+use crate::emulator::CpuType;
 use crate::external_ram::Sram;
 
 #[derive(Default)]

@@ -2,7 +2,6 @@
 #[cfg(test)]
 mod tests;
 
-use crate::mem::MemBus;
 use std::cmp::min;
 
 const SGBCOM_PAL01: u32     = 0x00;
@@ -104,7 +103,7 @@ impl Sgb {
     /// Signal an updated value on IO port 0x00.
     /// Packets are transferred by sending specific signals along this channel.
     /// Bits P15 and P14 are the only ones considered here.
-    pub fn write_input_signal(&mut self, byte: u8, mem_bus: &mut MemBus) {
+    pub fn write_input_signal(&mut self, byte: u8, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
 
         let signal_bits = byte & 0x30;
 
@@ -127,7 +126,7 @@ impl Sgb {
                 self.no_packets_sent += 1;
                 self.read_command_bytes = 0;
                 if self.no_packets_sent >= self.no_packets_to_send {
-                    self.check_packets(mem_bus);
+                    self.check_packets(vram, vram_bank_offset, display_flags);
                     self.reading_command = false;
                 }
                 return;
@@ -138,7 +137,7 @@ impl Sgb {
                 self.check_byte();
             }
             if self.no_packets_sent >= self.no_packets_to_send {
-                self.check_packets(mem_bus);
+                self.check_packets(vram, vram_bank_offset, display_flags);
                 self.reading_command = false;
                 self.no_packets_sent = 0;
                 self.no_packets_to_send = 0;
@@ -184,7 +183,7 @@ impl Sgb {
         }
     }
 
-    fn check_packets(&mut self, mem_bus: &mut MemBus) {
+    fn check_packets(&mut self, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
         match self.command {
             SGBCOM_PAL01 => self.finalise_palette_load(0, 1),
             SGBCOM_PAL23 => self.finalise_palette_load(2, 3),
@@ -196,7 +195,7 @@ impl Sgb {
             SGBCOM_ATTR_CHR => self.finalise_attr_chr(),
             SGBCOM_SOUND => {},
             SGBCOM_PAL_SET => self.finalise_palette_set(),
-            SGBCOM_PAL_TRN => self.finalise_palette_transfer(mem_bus),
+            SGBCOM_PAL_TRN => self.finalise_palette_transfer(vram, vram_bank_offset, display_flags),
             SGBCOM_ICON_EN => {},
             SGBCOM_DATA_SEND => {},
             SGBCOM_MLT_REQ => self.finalise_multi_request(),
@@ -472,10 +471,9 @@ impl Sgb {
         }
     }
 
-    fn finalise_palette_transfer(&mut self, mem_bus: &mut MemBus) {
-        let display_flags = mem_bus.read_address(0xff40);
+    fn finalise_palette_transfer(&mut self, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
         if (display_flags & 0x80) != 0 {
-            self.map_vram_for_transfer_op(mem_bus);
+            self.map_vram_for_transfer_op(vram, vram_bank_offset, display_flags);
             let mut source_index: usize = 0;
             for palette_no in 0..512 {
                 for colour_no in 0..4 {
@@ -509,9 +507,8 @@ impl Sgb {
     // Assumes a certain display configuration and does not account for variances
     // This includes display enable, background not scrolled, window and sprites not on-screen,
     // and the BGP palette register has a certain value (possibly 0xe4)
-    fn map_vram_for_transfer_op(&mut self, mem_bus: &mut MemBus) {
+    fn map_vram_for_transfer_op(&mut self, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
 
-        let display_flags = mem_bus.read_address(0xff40);
         let use_low_chr_offset = (display_flags & 0x10) != 0;
         let (chars_start, char_code_inverter) = match use_low_chr_offset {
             true => (0 as usize, 0 as usize),
@@ -528,12 +525,12 @@ impl Sgb {
             for chr_x in 0..20 {
                 // Copy 16 bytes of the character tile in this location
                 let map_index = chr_y * 32 + chr_x;
-                let tile_no_byte = mem_bus.read_address(0x8000 + map_start + map_index);
+                let tile_no_byte = vram[vram_bank_offset + map_start + map_index];
                 let zero_based_tile_no = (tile_no_byte as usize) ^ char_code_inverter;
                 let mut chars_data_start_index = chars_start + zero_based_tile_no * 16;
                 for byte_no in 0..16 {
                     self.mapped_vram_for_trn_op[16 * (chr_y * 20 + chr_x) + byte_no] =
-                        mem_bus.read_address(0x8000 + chars_data_start_index);
+                        vram[vram_bank_offset + chars_data_start_index];
                     chars_data_start_index += 1;
                 }
             }

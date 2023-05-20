@@ -1,10 +1,8 @@
 
-mod cpu;
 mod emulator;
 mod external_ram;
 mod gpu;
 mod rom;
-mod mem;
 mod sgb;
 mod audio;
 mod input;
