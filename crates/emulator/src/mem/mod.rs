@@ -8,6 +8,8 @@ pub trait MemoryMap {
     fn write_address(&mut self, address: usize, byte: u8);
     fn read_address_16(&self, address: usize) -> (u8, u8);
     fn write_address_16(&mut self, address: usize, bytes: (u8, u8));
+    fn read_io(&self, address: usize) -> u8;
+    fn write_io(&mut self, address: usize, byte: u8);
     fn set_vram_protection(&mut self, protected: bool);
     fn set_oam_protection(&mut self, protected: bool);
     fn perform_and(&mut self, address: usize, byte: u8);
@@ -57,6 +59,12 @@ impl MemoryMap for SimpleMemoryMap {
         self.store[address] = bytes.1;
         self.store[address + 1] = bytes.0;
     }
+
+    fn read_io(&self, address: usize) -> u8 {
+        0xff
+    }
+
+    fn write_io(&mut self, address: usize, byte: u8) {}
 
     fn set_vram_protection(&mut self, protected: bool) {
         self.vram_protected = protected;

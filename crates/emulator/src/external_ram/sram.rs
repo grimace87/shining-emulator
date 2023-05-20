@@ -13,15 +13,15 @@ const SAVE_FILE_EXTENSION: &str = "gsv";
 pub struct Sram {
     file_backing: Option<BufWriter<File>>,
     data: Vec<u8>,
-    has_timer: bool,
-    timer_data: [u8; 5],
-    timer_mode: u32,
-    timer_latch: u32,
-    bank_offset: usize,
+    pub has_timer: bool,
+    pub timer_data: [u8; 5],
+    pub timer_mode: u32,
+    pub timer_latch: u32,
+    pub bank_offset: usize,
     size_enum: u8,
-    size_bytes: usize,
+    pub size_bytes: usize,
     bank_select_mask: u8,
-    enable_flag: bool
+    pub enable_flag: bool
 }
 
 impl Sram {
@@ -112,6 +112,10 @@ impl Sram {
     pub fn write_timer_data(&mut self, timer_mode: usize, byte: u8) {
         let address = self.size_bytes + timer_mode;
         self.write_through(address, byte);
+    }
+
+    pub fn latch_timer_data(&mut self) {
+        todo!()
     }
 
     fn write_through(&mut self, address: usize, byte: u8) {

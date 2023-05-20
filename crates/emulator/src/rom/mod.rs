@@ -8,7 +8,7 @@ use crate::external_ram::Sram;
 #[derive(Default)]
 pub struct Rom {
     pub valid: bool,
-    rom: Vec<u8>,
+    pub data: Vec<u8>,
     pub name: String,
     pub cgb_flag: bool,
     pub sgb_flag: bool,
@@ -18,7 +18,7 @@ pub struct Rom {
     pub has_rumble: bool,
     pub mbc: Mbc,
     pub size_bytes: u32,
-    bank_select_mask: u32,
+    pub bank_select_mask: u32,
     pub sram_size_bytes: usize
 }
 
@@ -249,13 +249,13 @@ impl Rom {
         }
 
         // Copy ROM data into new Vec
-        let mut rom: Vec<u8> = vec![0; 256 * 16384];
-        let mut rom_slice = &mut rom[0..(size_bytes as usize)];
+        let mut rom_data: Vec<u8> = vec![0; 256 * 16384];
+        let mut rom_slice = &mut rom_data[0..(size_bytes as usize)];
         rom_slice.copy_from_slice(&data[0..(size_bytes as usize)]);
 
         Self {
             valid: true,
-            rom,
+            data: rom_data,
             name: name_string,
             cgb_flag,
             sgb_flag,
