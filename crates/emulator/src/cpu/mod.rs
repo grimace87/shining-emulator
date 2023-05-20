@@ -3,6 +3,17 @@ use crate::mem::MemoryMap;
 use crate::audio::AudioController;
 use crate::gpu::Gpu;
 
+const GB_FREQ: u64 = 4194304;
+const SGB_FREQ: u64 = 4295454;
+const CGB_FREQ: u64 = 8400000;
+
+#[derive(Eq, PartialEq, Copy, Clone)]
+pub enum CpuType {
+    Dmg,
+    Sgb,
+    Cgb
+}
+
 #[derive(Eq, PartialEq)]
 enum Mode {
     Running,
@@ -11,6 +22,7 @@ enum Mode {
 }
 
 pub struct Cpu {
+    cpu_type: CpuType,
     pc: usize,
     sp: usize,
     a: u8,
@@ -24,6 +36,7 @@ pub struct Cpu {
     mode: Mode,
     is_running: bool,
     is_paused: bool,
+    clock_frequency: u64,
     ime: bool,
     divider_count: u32,
     timer_count: u32,
@@ -37,8 +50,9 @@ pub struct Cpu {
 
 impl Cpu {
 
-    pub fn new(cgb_flag: bool) -> Self {
+    pub fn new(cpu_type: CpuType) -> Self {
         let mut cpu = Self {
+            cpu_type,
             pc: 0,
             sp: 0,
             a: 0,
@@ -52,6 +66,7 @@ impl Cpu {
             mode: Mode::Stopped,
             is_running: false,
             is_paused: false,
+            clock_frequency: GB_FREQ,
             ime: false,
             divider_count: 0,
             timer_count: 0,
@@ -64,7 +79,7 @@ impl Cpu {
         };
 
         // Return object ready to run
-        cpu.reset(cgb_flag);
+        cpu.reset(cpu_type);
         cpu
     }
 
@@ -72,7 +87,7 @@ impl Cpu {
         self.is_running = false;
     }
 
-    pub fn reset(&mut self, cgb_flag: bool) {
+    pub fn reset(&mut self, cpu_type: CpuType) {
 
         self.is_running = true;
         self.is_paused = false;
@@ -96,12 +111,25 @@ impl Cpu {
         self.h = 0x01;
         self.l = 0x4d;
 
-        // Conditional state
-        if cgb_flag {
-            self.a = 0x11;
-        } else {
-            self.a = 0x01;
+        // Hardware-dependent state
+        match cpu_type {
+            CpuType::Dmg => {
+                self.a = 0x01;
+                self.clock_frequency = GB_FREQ;
+            },
+            CpuType::Sgb => {
+                self.a = 0x11;
+                self.clock_frequency = SGB_FREQ;
+            },
+            CpuType::Cgb => {
+                self.a = 0x11;
+                self.clock_frequency = GB_FREQ;
+            }
         }
+    }
+
+    pub fn get_clock_frequency(&self) -> u64 {
+        self.clock_frequency
     }
 
     pub fn set_input_values(&mut self, key_dir: u8, key_but: u8) {
@@ -142,7 +170,7 @@ impl Cpu {
 
         let mut remaining_clocks = clocks;
         while remaining_clocks > 0 {
-            let progress = self.emulate_next_step(mem_bus, audio, &gpu) as i64;
+            let progress = self.emulate_next_step(mem_bus, audio, gpu) as i64;
             if progress <= 32 {
                 let display_enabled = (mem_bus.read_address(0xff40) & 0x80) != 0;
                 if display_enabled {
@@ -162,7 +190,7 @@ impl Cpu {
         &mut self,
         mem_bus: &mut M,
         audio: &mut A,
-        gpu: &Gpu
+        gpu: &mut Gpu
     ) -> u64 {
         let clocks_passed_by_instruction = self.perform_op(mem_bus, audio);
         self.pc &= 0xffff;
@@ -175,8 +203,9 @@ impl Cpu {
 
         // While CPU is in stop mode, nothing much still runs
         if self.mode == Mode::Stopped {
-            if self.switch_running_speed(mem_bus) {
+            if let Some(gpu_clock_factor) = self.switch_running_speed(mem_bus) {
                 self.mode = Mode::Running;
+                gpu.clock_factor = gpu_clock_factor;
                 return clocks_passed_by_instruction + 131072;
             }
             return clocks_passed_by_instruction;
@@ -270,8 +299,23 @@ impl Cpu {
     }
 
     #[inline]
-    fn switch_running_speed<M: MemoryMap>(&mut self, mem_bus: &mut M) -> bool {
-        todo!()
+    fn switch_running_speed<M: MemoryMap>(&mut self, mem_bus: &mut M) -> Option<u32> {
+        let speed_change_requested = self.cpu_type == CpuType::Cgb && mem_bus.read_address(0xff4d) == 0x01;
+        if speed_change_requested {
+            // Speed change was requested in CGB mode
+            mem_bus.perform_and(0xff4d, 0x80);
+            let new_byte = mem_bus.read_address(0xff4d);
+            if new_byte == 0x00 {
+                mem_bus.write_address(0xff4d, 0x80);
+                self.clock_frequency = CGB_FREQ;
+                return Some(2);
+            } else {
+                mem_bus.write_address(0xff4d, 0x00);
+                self.clock_frequency = GB_FREQ;
+                return Some(1);
+            }
+        }
+        None
     }
 
     #[inline]

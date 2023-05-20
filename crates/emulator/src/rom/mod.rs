@@ -2,6 +2,7 @@
 #[cfg(test)]
 mod tests;
 
+use crate::cpu::CpuType;
 use crate::external_ram::Sram;
 
 #[derive(Default)]
@@ -266,6 +267,16 @@ impl Rom {
             size_bytes,
             bank_select_mask,
             sram_size_bytes
+        }
+    }
+
+    pub fn get_preferred_hardware_type(&self) -> CpuType {
+        if self.cgb_flag {
+            CpuType::Cgb
+        } else if self.sgb_flag {
+            CpuType::Sgb
+        } else {
+            CpuType::Dmg
         }
     }
 

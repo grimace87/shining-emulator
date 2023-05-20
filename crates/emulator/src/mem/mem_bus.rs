@@ -1,7 +1,8 @@
 
+use crate::cpu::CpuType;
+use crate::external_ram::Sram;
 use crate::mem::MemoryMap;
 use crate::rom::Rom;
-use crate::external_ram::Sram;
 
 pub struct MemBus {
     pub rom: Rom,
@@ -34,7 +35,7 @@ impl MemBus {
         }
     }
 
-    pub fn reset(&mut self, sgb_flag: bool) {
+    pub fn reset(&mut self, cpu_type: CpuType) {
 
         if let Some(sram) = &mut self.sram {
             sram.reset();
@@ -86,7 +87,7 @@ impl MemBus {
         self.io_ports[255] = 0x00;
 
         // Conditional state
-        if sgb_flag {
+        if cpu_type == CpuType::Sgb {
             self.io_ports[38] = 0xf0;
         } else {
             self.io_ports[38] = 0xf1;
