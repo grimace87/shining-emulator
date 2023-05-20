@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod tests;
 
-use crate::mem::MemoryMap;
+use crate::mem::MemBus;
 use std::cmp::min;
 
 const SGBCOM_PAL01: u32     = 0x00;
@@ -104,7 +104,7 @@ impl Sgb {
     /// Signal an updated value on IO port 0x00.
     /// Packets are transferred by sending specific signals along this channel.
     /// Bits P15 and P14 are the only ones considered here.
-    pub fn write_input_signal<M: MemoryMap>(&mut self, byte: u8, mem_bus: &mut M) {
+    pub fn write_input_signal(&mut self, byte: u8, mem_bus: &mut MemBus) {
 
         let signal_bits = byte & 0x30;
 
@@ -184,7 +184,7 @@ impl Sgb {
         }
     }
 
-    fn check_packets<M: MemoryMap>(&mut self, mem_bus: &mut M) {
+    fn check_packets(&mut self, mem_bus: &mut MemBus) {
         match self.command {
             SGBCOM_PAL01 => self.finalise_palette_load(0, 1),
             SGBCOM_PAL23 => self.finalise_palette_load(2, 3),
@@ -472,7 +472,7 @@ impl Sgb {
         }
     }
 
-    fn finalise_palette_transfer<M: MemoryMap>(&mut self, mem_bus: &mut M) {
+    fn finalise_palette_transfer(&mut self, mem_bus: &mut MemBus) {
         let display_flags = mem_bus.read_address(0xff40);
         if (display_flags & 0x80) != 0 {
             self.map_vram_for_transfer_op(mem_bus);
@@ -509,7 +509,7 @@ impl Sgb {
     // Assumes a certain display configuration and does not account for variances
     // This includes display enable, background not scrolled, window and sprites not on-screen,
     // and the BGP palette register has a certain value (possibly 0xe4)
-    fn map_vram_for_transfer_op<M: MemoryMap>(&mut self, mem_bus: &mut M) {
+    fn map_vram_for_transfer_op(&mut self, mem_bus: &mut MemBus) {
 
         let display_flags = mem_bus.read_address(0xff40);
         let use_low_chr_offset = (display_flags & 0x10) != 0;

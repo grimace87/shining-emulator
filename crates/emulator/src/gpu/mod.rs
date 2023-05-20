@@ -1,7 +1,7 @@
 
 mod filter;
 
-use crate::mem::MemoryMap;
+use crate::mem::MemBus;
 
 enum Mode {
     HBlank,
@@ -50,7 +50,7 @@ impl Gpu {
         self.cgb_obj_pal_index = 0;
     }
 
-    pub fn emulate_clock_cycles<M: MemoryMap>(&mut self, clock_cycles: i64, mem_bus: &mut M) {
+    pub fn emulate_clock_cycles(&mut self, clock_cycles: i64, mem_bus: &mut MemBus) {
         // Double CPU speed mode affects instruction rate but should not affect GPU speed
         self.time_in_current_mode += (clock_cycles / (self.clock_factor as i64)) as u32;
         match self.mode {
@@ -71,7 +71,7 @@ impl Gpu {
         }
     }
 
-    pub fn on_display_disabled<M: MemoryMap>(&mut self, mem_bus: &mut M) {
+    pub fn on_display_disabled(&mut self, mem_bus: &mut MemBus) {
         if self.blanked_screen {
             return;
         }

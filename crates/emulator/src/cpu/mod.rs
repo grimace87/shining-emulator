@@ -1,5 +1,5 @@
 
-use crate::mem::MemoryMap;
+use crate::mem::MemBus;
 use crate::audio::AudioController;
 use crate::gpu::Gpu;
 
@@ -140,10 +140,10 @@ impl Cpu {
         self.current_key_but = key_but;
     }
 
-    pub fn emulate_clock_cycles<M: MemoryMap, A: AudioController>(
+    pub fn emulate_clock_cycles<A: AudioController>(
         &mut self,
         clocks: i64,
-        mem_bus: &mut M,
+        mem_bus: &mut MemBus,
         audio: &mut A,
         gpu: &mut Gpu
     ) -> i64 {
@@ -186,9 +186,9 @@ impl Cpu {
 
     /// Simulate one instruction, returning the number of clock cycles progressed.
     #[inline]
-    fn emulate_next_step<M: MemoryMap, A: AudioController>(
+    fn emulate_next_step<A: AudioController>(
         &mut self,
-        mem_bus: &mut M,
+        mem_bus: &mut MemBus,
         audio: &mut A,
         gpu: &mut Gpu
     ) -> u64 {
@@ -256,7 +256,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn process_interrupts<M: MemoryMap>(&mut self, cpu_halted: bool, mem_bus: &mut M) {
+    fn process_interrupts(&mut self, cpu_halted: bool, mem_bus: &mut MemBus) {
 
         let triggered_interrupts = mem_bus.read_address(0xffff) &
             mem_bus.read_address(0xff0f) & 0x1f;
@@ -299,7 +299,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn switch_running_speed<M: MemoryMap>(&mut self, mem_bus: &mut M) -> Option<u32> {
+    fn switch_running_speed(&mut self, mem_bus: &mut MemBus) -> Option<u32> {
         let speed_change_requested = self.cpu_type == CpuType::Cgb && mem_bus.read_address(0xff4d) == 0x01;
         if speed_change_requested {
             // Speed change was requested in CGB mode
@@ -319,9 +319,9 @@ impl Cpu {
     }
 
     #[inline]
-    fn perform_op<M: MemoryMap, A: AudioController>(
+    fn perform_op<A: AudioController>(
         &mut self,
-        mem_bus: &mut M,
+        mem_bus: &mut MemBus,
         audio: &mut A
     ) -> u64 {
         todo!()

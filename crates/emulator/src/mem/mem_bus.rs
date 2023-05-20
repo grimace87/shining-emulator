@@ -1,7 +1,6 @@
 
 use crate::cpu::CpuType;
 use crate::external_ram::{Sram, ExternalRam};
-use crate::mem::MemoryMap;
 use crate::rom::{Rom, Mbc};
 
 pub struct MemBus {
@@ -99,11 +98,8 @@ impl MemBus {
             self.io_ports[38] = 0xf1;
         }
     }
-}
 
-impl MemoryMap for MemBus {
-
-    fn read_address(&self, address: usize) -> u8 {
+    pub fn read_address(&self, address: usize) -> u8 {
         let masked_address = address & 0xffff;
         match masked_address {
             0x0000..=0x3fff => self.rom.data[masked_address],
@@ -138,7 +134,7 @@ impl MemoryMap for MemBus {
         }
     }
 
-    fn write_address(&mut self, address: usize, byte: u8) {
+    pub fn write_address(&mut self, address: usize, byte: u8) {
         let masked_address = address & 0xffff;
         match masked_address {
             0x0000..=0x7fff => {
@@ -361,35 +357,35 @@ impl MemoryMap for MemBus {
         }
     }
 
-    fn read_address_16(&self, address: usize) -> (u8, u8) {
+    pub fn read_address_16(&self, address: usize) -> (u8, u8) {
         todo!()
     }
 
-    fn write_address_16(&mut self, address: usize, bytes: (u8, u8)) {
+    pub fn write_address_16(&mut self, address: usize, bytes: (u8, u8)) {
         todo!()
     }
 
-    fn read_io(&self, address: usize) -> u8 {
+    pub fn read_io(&self, address: usize) -> u8 {
         todo!()
     }
 
-    fn write_io(&mut self, address: usize, byte: u8) {
+    pub fn write_io(&mut self, address: usize, byte: u8) {
 
     }
 
-    fn set_vram_protection(&mut self, protected: bool) {
+    pub fn set_vram_protection(&mut self, protected: bool) {
         self.vram_protected = protected;
     }
 
-    fn set_oam_protection(&mut self, protected: bool) {
+    pub fn set_oam_protection(&mut self, protected: bool) {
         self.oam_protected = protected;
     }
 
-    fn perform_and(&mut self, address: usize, byte: u8) {
+    pub fn perform_and(&mut self, address: usize, byte: u8) {
         self.write_address(address, self.read_address(address) & byte);
     }
 
-    fn perform_or(&mut self, address: usize, byte: u8) {
+    pub fn perform_or(&mut self, address: usize, byte: u8) {
         self.write_address(address, self.read_address(address) | byte);
     }
 }

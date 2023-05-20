@@ -94,7 +94,7 @@ impl Emulator<DummyAudioController> {
         let mut mem_bus = self.mem_bus.borrow_mut();
         let mut audio = self.audio.borrow_mut();
         let mut gpu = self.gpu.borrow_mut();
-        self.cpu.emulate_clock_cycles::<MemBus, DummyAudioController>(
+        self.cpu.emulate_clock_cycles::<DummyAudioController>(
             self.accumulated_clocks as i64,
             &mut mem_bus,
             &mut audio,
