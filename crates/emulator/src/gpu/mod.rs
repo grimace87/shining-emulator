@@ -14,7 +14,7 @@ pub struct Gpu {
     blanked_screen: bool,
     needing_clear: bool,
     mode: Mode,
-    tile_set: Vec<u32>,
+    pub tile_set: Vec<u32>,
     cgb_bg_pal_index: u32,
     cgb_obj_pal_index: u32
 }

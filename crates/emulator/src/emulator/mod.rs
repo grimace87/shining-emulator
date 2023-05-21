@@ -685,14 +685,14 @@ impl<A: AudioController> Emulator<A> {
                 }
 
                 // TODO - Write this to tile set cache in GPU
-                // self.tile_set[output_address] = ((byte2 >> 6) & 0x02) + (byte1 >> 7);
-                // self.tile_set[output_address + 1] = ((byte2 >> 5) & 0x02) + ((byte1 >> 6) & 0x01);
-                // self.tile_set[output_address + 2] = ((byte2 >> 4) & 0x02) + ((byte1 >> 5) & 0x01);
-                // self.tile_set[output_address + 3] = ((byte2 >> 3) & 0x02) + ((byte1 >> 4) & 0x01);
-                // self.tile_set[output_address + 4] = ((byte2 >> 2) & 0x02) + ((byte1 >> 3) & 0x01);
-                // self.tile_set[output_address + 5] = ((byte2 >> 1) & 0x02) + ((byte1 >> 2) & 0x01);
-                // self.tile_set[output_address + 6] = (byte2 & 0x02) + ((byte1 >> 1) & 0x01);
-                // self.tile_set[output_address + 7] = ((byte2 << 1) & 0x02) + (byte1 & 0x01);
+                self.gpu.tile_set[output_address] = ((byte2 >> 6) & 0x02) + (byte1 >> 7);
+                self.gpu.tile_set[output_address + 1] = ((byte2 >> 5) & 0x02) + ((byte1 >> 6) & 0x01);
+                self.gpu.tile_set[output_address + 2] = ((byte2 >> 4) & 0x02) + ((byte1 >> 5) & 0x01);
+                self.gpu.tile_set[output_address + 3] = ((byte2 >> 3) & 0x02) + ((byte1 >> 4) & 0x01);
+                self.gpu.tile_set[output_address + 4] = ((byte2 >> 2) & 0x02) + ((byte1 >> 3) & 0x01);
+                self.gpu.tile_set[output_address + 5] = ((byte2 >> 1) & 0x02) + ((byte1 >> 2) & 0x01);
+                self.gpu.tile_set[output_address + 6] = (byte2 & 0x02) + ((byte1 >> 1) & 0x01);
+                self.gpu.tile_set[output_address + 7] = ((byte2 << 1) & 0x02) + (byte1 & 0x01);
             },
             0xa000..=0xbfff => {
                 if let Some(sram) = &mut self.sram {
