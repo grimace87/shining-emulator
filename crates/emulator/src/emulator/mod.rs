@@ -281,8 +281,7 @@ impl<A: AudioController> Emulator<A> {
         let cpu_frequency = self.clock_frequency as i64;
         let adjusted_frequency =
             (cpu_frequency * self.clock_multiply / self.clock_divide) as f64;
-        self.accumulated_clocks =
-            self.accumulated_clocks + (time_diff_millis as f64 * 0.001 * adjusted_frequency) as u64;
+        self.accumulated_clocks += (time_diff_millis as f64 * 0.001 * adjusted_frequency) as u64;
         let approx_multiplier = (self.clock_multiply / self.clock_divide + 1) as u64;
         let clocks_cap = 1000000 * approx_multiplier;
         if self.accumulated_clocks > clocks_cap {
@@ -366,9 +365,8 @@ impl<A: AudioController> Emulator<A> {
 
         // While CPU is in stop mode, nothing much still runs
         if self.mode == Mode::Stopped {
-            if let Some(gpu_clock_factor) = self.switch_running_speed() {
+            if self.switch_running_speed() {
                 self.mode = Mode::Running;
-                self.gpu.clock_factor = gpu_clock_factor;
                 return clocks_passed_by_instruction + 131072;
             }
             return clocks_passed_by_instruction;
@@ -461,7 +459,7 @@ impl<A: AudioController> Emulator<A> {
     }
 
     #[inline]
-    fn switch_running_speed(&mut self) -> Option<u32> {
+    fn switch_running_speed(&mut self) -> bool {
         let speed_change_requested = self.cpu_type == CpuType::Cgb && self.read_address(0xff4d) == 0x01;
         if speed_change_requested {
             // Speed change was requested in CGB mode
@@ -470,14 +468,16 @@ impl<A: AudioController> Emulator<A> {
             if new_byte == 0x00 {
                 self.write_address(0xff4d, 0x80);
                 self.clock_frequency = CGB_FREQ;
-                return Some(2);
+                self.gpu.clock_factor = 2;
+                return true;
             } else {
                 self.write_address(0xff4d, 0x00);
                 self.clock_frequency = GB_FREQ;
-                return Some(1);
+                self.gpu.clock_factor = 1;
+                return true;
             }
         }
-        None
+        false
     }
 
     #[inline]
