@@ -120,11 +120,11 @@ impl<A: AudioController> Emulator<A> {
             current_clock_multiplier_combo: 10,
 
             rom,
-            wram: Vec::with_capacity(8 * 4096),
-            vram: Vec::with_capacity(2 * 8192),
+            wram: vec![0; 8 * 4096],
+            vram: vec![0; 2 * 8192],
             sram,
-            oam: Vec::with_capacity(160),
-            io_ports: Vec::with_capacity(256),
+            oam: vec![0; 160],
+            io_ports: vec![0; 256],
             vram_protected: false,
             oam_protected: false,
             rom_bank_offset: 0,
@@ -162,7 +162,7 @@ impl<A: AudioController> Emulator<A> {
             blanked_screen: false,
             needing_clear: false,
             gpu_mode: GpuMode::VBlank,
-            tile_set: vec![2 * 384 * 8 * 8], // 2 VRAM banks, 384 tiles, 8 rows, 8 pixels per row
+            tile_set: vec![0; 2 * 384 * 8 * 8], // 2 VRAM banks, 384 tiles, 8 rows, 8 pixels per row
             cgb_bg_pal_index: 0,
             cgb_obj_pal_index: 0,
 
