@@ -1,7 +1,6 @@
 
 use crate::audio::{AudioController, DummyAudioController};
 use crate::external_ram::{Sram, ExternalRam};
-use crate::gpu::Gpu;
 use crate::input::Input;
 use crate::rom::{Rom, Mbc};
 use crate::sgb::Sgb;
@@ -29,10 +28,17 @@ enum Mode {
     Stopped
 }
 
+#[repr(u8)]
+enum GpuMode {
+    HBlank = 0,
+    VBlank = 1,
+    ScanOam = 2,
+    ScanVram = 3
+}
+
 pub struct Emulator<A: AudioController> {
 
     // Emulator
-    gpu: Gpu,
     sgb: Sgb,
     audio: A,
     input: Input,
@@ -79,7 +85,23 @@ pub struct Emulator<A: AudioController> {
     last_ly_compare: u32,
     current_key_dir: u8,
     current_key_but: u8,
-    key_state_changed: bool
+    key_state_changed: bool,
+
+    // GPU
+    gpu_clock_factor: u32,
+    time_in_current_gpu_mode: u32,
+    blanked_screen: bool,
+    needing_clear: bool,
+    gpu_mode: GpuMode,
+    tile_set: Vec<u32>,
+    cgb_bg_pal_index: u32,
+    cgb_obj_pal_index: u32,
+
+    // Serial
+    serial_request: bool,
+    serial_is_transferring: bool,
+    serial_clock_is_external: bool,
+    serial_timer: i32
 }
 
 impl<A: AudioController> Emulator<A> {
@@ -89,7 +111,6 @@ impl<A: AudioController> Emulator<A> {
         let cpu_type = rom.get_preferred_hardware_type();
         let mut emulator = Self {
 
-            gpu: Gpu::new(),
             sgb: Sgb::new(),
             audio: A::new(),
             input: Input::new(),
@@ -134,7 +155,21 @@ impl<A: AudioController> Emulator<A> {
             last_ly_compare: 0,
             current_key_dir: 0x0f,
             current_key_but: 0x0f,
-            key_state_changed: false
+            key_state_changed: false,
+
+            gpu_clock_factor: 1,
+            time_in_current_gpu_mode: 0,
+            blanked_screen: false,
+            needing_clear: false,
+            gpu_mode: GpuMode::VBlank,
+            tile_set: vec![2 * 384 * 8 * 8], // 2 VRAM banks, 384 tiles, 8 rows, 8 pixels per row
+            cgb_bg_pal_index: 0,
+            cgb_obj_pal_index: 0,
+
+            serial_request: false,
+            serial_is_transferring: false,
+            serial_clock_is_external: false,
+            serial_timer: 0
         };
         emulator.reset();
         emulator
@@ -145,7 +180,6 @@ impl<A: AudioController> Emulator<A> {
         let cpu_type = self.rom.get_preferred_hardware_type();
 
         // Reset component states
-        self.gpu.reset();
         self.sgb.reset();
         self.audio.reset(self.clock_frequency);
         self.input.reset();
@@ -223,6 +257,18 @@ impl<A: AudioController> Emulator<A> {
         self.timer_running = false;
         self.last_ly_compare = 1;
         self.key_state_changed = false;
+
+        self.gpu_clock_factor = 1;
+        self.gpu_mode = GpuMode::ScanOam;
+        self.time_in_current_gpu_mode = 0;
+        self.blanked_screen = false;
+        self.cgb_bg_pal_index = 0;
+        self.cgb_obj_pal_index = 0;
+
+        self.serial_request = false;
+        self.serial_is_transferring = false;
+        self.serial_clock_is_external = false;
+        self.serial_timer = 0;
 
         // Set various state
         self.pc = 0x0100;
@@ -305,6 +351,20 @@ impl<A: AudioController> Emulator<A> {
         self.is_running = false;
     }
 
+    fn on_display_disabled(&mut self) {
+        if self.blanked_screen {
+            return;
+        }
+        self.time_in_current_gpu_mode = 0;
+        self.gpu_mode = GpuMode::ScanOam;
+        self.blanked_screen = true;
+
+        // Mark any started frames as complete - probably won't do much
+        // while frame_manager.frame_is_in_progress() {
+        //     frame_manager.finish_current_frame();
+        // }
+    }
+
     pub fn emulate_clock_cycles(&mut self) -> i64 {
 
         let accumulated_clocks = self.accumulated_clocks as i64;
@@ -336,19 +396,145 @@ impl<A: AudioController> Emulator<A> {
             if progress <= 32 {
                 let display_enabled = (self.read_address(0xff40) & 0x80) != 0;
                 if display_enabled {
-                    self.gpu.emulate_clock_cycles(progress);
+                    self.emulate_gpu(progress);
                 } else {
-                    if !self.gpu.is_screen_blanked() {
+                    if !self.blanked_screen {
                         self.set_oam_protection(false);
                         self.set_vram_protection(false);
                         self.write_address(0xff44, 0);
-                        self.gpu.on_display_disabled();
+                        self.on_display_disabled();
                     }
                 }
             }
             remaining_clocks -= progress;
         }
         accumulated_clocks - remaining_clocks
+    }
+
+    #[inline]
+    fn emulate_gpu(&mut self, clock_cycles: i64) {
+        // Double CPU speed mode affects instruction rate but should not affect GPU speed
+        self.time_in_current_gpu_mode += (clock_cycles / (self.gpu_clock_factor as i64)) as u32;
+        match self.gpu_mode {
+            GpuMode::HBlank => {
+                // Spends 204 cycles here, then moves to next line. After 144th hblank, move to vblank.
+                if self.time_in_current_gpu_mode < 204 {
+                    return;
+                }
+                self.time_in_current_gpu_mode -= 204;
+                self.io_ports[0x44] += 1;
+                if self.io_ports[0x44] == 144 {
+                    self.gpu_mode = GpuMode::VBlank;
+                    self.io_ports[0x41] &= 0xfc;
+                    self.io_ports[0x41] |= GpuMode::VBlank as u8;
+                    // Set interrupt request for VBLANK
+                    self.io_ports[0x0f] |= 0x01;
+                    self.oam_protected = false;
+                    self.vram_protected = false;
+                    if (self.io_ports[0x41] & 0x10) != 0x00 {
+                        // Request status int if condition met
+                        self.io_ports[0x0f] |= 0x02;
+                    }
+                    // This is where stuff can be drawn - on the beginning of the vblank
+                    if !self.sgb.freeze_screen {
+                        // if (frameManager.frameIsInProgress()) {
+                        //     auto frameBuffer = frameManager.getInProgressFrameBuffer();
+                        //     if ((frameBuffer != nullptr) && romProperties.sgbFlag) {
+                        //         sgb.colouriseFrame(frameBuffer);
+                        //     }
+                        //     frameManager.finishCurrentFrame();
+                        // }
+                    }
+                } else {
+                    self.gpu_mode = GpuMode::ScanOam;
+                    self.io_ports[0x41] &= 0xfc;
+                    self.io_ports[0x41] |= GpuMode::ScanOam as u8;
+                    self.oam_protected = true;
+                    self.vram_protected = false;
+                    if (self.io_ports[0x41] & 0x20) != 0x00 {
+                        // Request status int if condition met
+                        self.io_ports[0x0f] |= 0x02;
+                    }
+                }
+            },
+            GpuMode::VBlank => {
+                if self.time_in_current_gpu_mode < 456 {
+                    return;
+                }
+                // 10 of these lines in vblank
+                self.time_in_current_gpu_mode -= 456;
+                self.io_ports[0x44] += 1;
+                if self.io_ports[0x44] >= 154 {
+                    self.gpu_mode = GpuMode::ScanOam;
+                    self.io_ports[0x41] &= 0xfc;
+                    self.io_ports[0x41] |= GpuMode::ScanOam as u8;
+                    self.io_ports[0x44] = 0;
+                    self.oam_protected = true;
+                    self.vram_protected = false;
+                    if (self.io_ports[0x41] & 0x20) != 0x00 {
+                        // Request status int if condition met
+                        self.io_ports[0x0f] |= 0x02;
+                    }
+
+                    // LCD starting at top of frame, ready a frame buffer if available
+                    // frameManager.beginNewFrame();
+                }
+            },
+            GpuMode::ScanOam => {
+                if self.time_in_current_gpu_mode < 80 {
+                    return;
+                }
+                self.time_in_current_gpu_mode -= 80;
+                self.gpu_mode = GpuMode::ScanVram;
+                self.io_ports[0x41] &= 0xfc;
+                self.io_ports[0x41] |= GpuMode::ScanVram as u8;
+                self.oam_protected = true;
+                self.vram_protected = true;
+            },
+            GpuMode::ScanVram => {
+                if self.time_in_current_gpu_mode < 172 {
+                    return;
+                }
+                self.time_in_current_gpu_mode -= 172;
+                self.gpu_mode = GpuMode::HBlank;
+                self.io_ports[0x41] &= 0xfc;
+                self.io_ports[0x41] |= GpuMode::HBlank as u8;
+                self.oam_protected = false;
+                self.vram_protected = false;
+                if (self.io_ports[0x41] & 0x08) != 0x00 {
+                    // Request status int if condition met
+                    self.io_ports[0x0f] |= 0x02;
+                }
+                // Run DMA if applicable
+                if self.io_ports[0x55] < 0xff {
+                    // H-blank DMA currently active
+                    let mut src_addr = ((self.io_ports[0x51] as usize) << 8) + self.io_ports[0x52] as usize; // DMA source
+                    // Don't do transfers within VRAM or from these other addresses either
+                    if (src_addr & 0xe000) != 0x8000 && src_addr < 0xe000 {
+                        let mut dst_addr = ((self.io_ports[0x53] as usize) << 8) + self.io_ports[0x54] as usize + 0x8000; // DMA destination
+                        for count in 0..16 {
+                            self.write_address(dst_addr, self.read_address(src_addr));
+                            src_addr += 1;
+                            dst_addr = (dst_addr + 1) & 0x9fff; // Keep it within VRAM
+                        }
+                    }
+
+                    // TODO - what is this?
+                    //if (ClockFreq == GBC_FREQ) clocks_acc -= 64;
+                    //else clocks_acc -= 32;
+                    self.io_ports[0x55] -= 1;
+                    if self.io_ports[0x55] < 0x80 {
+                        // End the DMA
+                        self.io_ports[0x55] = 0xff;
+                    }
+                }
+
+                // Process current line's graphics
+                // if (frameManager.frameIsInProgress()) {
+                //     (*this.*readLine)(frameManager.getInProgressFrameBuffer());
+                // }
+            }
+        }
     }
 
     /// Simulate one instruction, returning the number of clock cycles progressed.
@@ -409,9 +595,24 @@ impl<A: AudioController> Emulator<A> {
         }
 
         // Handle audio
-        self.audio.simulate(clocks_passed_by_instruction / (self.gpu.clock_factor as u64));
+        self.audio.simulate(clocks_passed_by_instruction / (self.gpu_clock_factor as u64));
 
-        // TODO - Serial functions
+        // Handle serial port timeout
+        if self.serial_is_transferring {
+            if !self.serial_clock_is_external {
+                self.serial_timer -= clocks_passed_by_instruction as i32;
+                if self.serial_timer <= 0 {
+                    self.serial_is_transferring = false;
+                    self.io_ports[0x02] &= 0x03;
+                    self.io_ports[0x0f] |= 0x08;
+                    self.io_ports[0x01] = 0xff;
+                }
+            } else {
+                if self.serial_timer == 1 {
+                    self.serial_timer = 0;
+                }
+            }
+        }
 
         clocks_passed_by_instruction
     }
@@ -468,12 +669,12 @@ impl<A: AudioController> Emulator<A> {
             if new_byte == 0x00 {
                 self.write_address(0xff4d, 0x80);
                 self.clock_frequency = CGB_FREQ;
-                self.gpu.clock_factor = 2;
+                self.gpu_clock_factor = 2;
                 return true;
             } else {
                 self.write_address(0xff4d, 0x00);
                 self.clock_frequency = GB_FREQ;
-                self.gpu.clock_factor = 1;
+                self.gpu_clock_factor = 1;
                 return true;
             }
         }
@@ -684,15 +885,15 @@ impl<A: AudioController> Emulator<A> {
                     output_address += 24576;
                 }
 
-                // TODO - Write this to tile set cache in GPU
-                self.gpu.tile_set[output_address] = ((byte2 >> 6) & 0x02) + (byte1 >> 7);
-                self.gpu.tile_set[output_address + 1] = ((byte2 >> 5) & 0x02) + ((byte1 >> 6) & 0x01);
-                self.gpu.tile_set[output_address + 2] = ((byte2 >> 4) & 0x02) + ((byte1 >> 5) & 0x01);
-                self.gpu.tile_set[output_address + 3] = ((byte2 >> 3) & 0x02) + ((byte1 >> 4) & 0x01);
-                self.gpu.tile_set[output_address + 4] = ((byte2 >> 2) & 0x02) + ((byte1 >> 3) & 0x01);
-                self.gpu.tile_set[output_address + 5] = ((byte2 >> 1) & 0x02) + ((byte1 >> 2) & 0x01);
-                self.gpu.tile_set[output_address + 6] = (byte2 & 0x02) + ((byte1 >> 1) & 0x01);
-                self.gpu.tile_set[output_address + 7] = ((byte2 << 1) & 0x02) + (byte1 & 0x01);
+                // Update the tile set cache in GPU
+                self.tile_set[output_address] = ((byte2 >> 6) & 0x02) + (byte1 >> 7);
+                self.tile_set[output_address + 1] = ((byte2 >> 5) & 0x02) + ((byte1 >> 6) & 0x01);
+                self.tile_set[output_address + 2] = ((byte2 >> 4) & 0x02) + ((byte1 >> 5) & 0x01);
+                self.tile_set[output_address + 3] = ((byte2 >> 3) & 0x02) + ((byte1 >> 4) & 0x01);
+                self.tile_set[output_address + 4] = ((byte2 >> 2) & 0x02) + ((byte1 >> 3) & 0x01);
+                self.tile_set[output_address + 5] = ((byte2 >> 1) & 0x02) + ((byte1 >> 2) & 0x01);
+                self.tile_set[output_address + 6] = (byte2 & 0x02) + ((byte1 >> 1) & 0x01);
+                self.tile_set[output_address + 7] = ((byte2 << 1) & 0x02) + (byte1 & 0x01);
             },
             0xa000..=0xbfff => {
                 if let Some(sram) = &mut self.sram {

@@ -1,7 +1,7 @@
 
 mod emulator;
 mod external_ram;
-mod gpu;
+mod filter;
 mod rom;
 mod sgb;
 mod audio;

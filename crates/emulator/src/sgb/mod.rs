@@ -38,7 +38,7 @@ pub struct Sgb {
     command: u32,
     read_command_bits: usize,
     read_command_bytes: usize,
-    freeze_screen: bool,
+    pub freeze_screen: bool,
     freeze_mode: u32,
     multi_enabled: bool,
     no_players: u32,
