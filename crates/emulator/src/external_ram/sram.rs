@@ -13,9 +13,9 @@ const SAVE_FILE_EXTENSION: &str = "gsv";
 
 pub struct Sram {
     file_backing: Option<BufWriter<File>>,
-    data: Vec<u8>,
+    data: Vec<Wrapping<u8>>,
     pub has_timer: bool,
-    pub timer_data: [u8; 5],
+    pub timer_data: [Wrapping<u8>; 5],
     pub timer_mode: u32,
     pub timer_latch: u32,
     pub bank_offset: Wrapping<usize>,
@@ -56,9 +56,9 @@ impl Sram {
 
         let mut sram = Self {
             file_backing,
-            data: data_buffer,
+            data: data_buffer.into_iter().map(|b| Wrapping(b)).collect(),
             has_timer: rom.has_timer,
-            timer_data: [0, 0, 0, 0, 0],
+            timer_data: [Wrapping(0), Wrapping(0), Wrapping(0), Wrapping(0), Wrapping(0)],
             timer_mode: 0,
             timer_latch: 0,
             bank_offset: Wrapping(0),
@@ -74,8 +74,8 @@ impl Sram {
     }
 
     pub fn reset(&mut self) {
-        self.data.fill(0);
-        self.timer_data.fill(0);
+        self.data.fill(Wrapping(0));
+        self.timer_data.fill(Wrapping(0));
         self.timer_mode = 0;
         self.timer_latch = 0;
         self.bank_offset = Wrapping(0);
@@ -110,7 +110,7 @@ impl Sram {
         Ok(writer)
     }
 
-    pub fn write_timer_data(&mut self, timer_mode: usize, byte: u8) {
+    pub fn write_timer_data(&mut self, timer_mode: usize, byte: Wrapping<u8>) {
         let address = self.size_bytes + timer_mode;
         self.write_through(address, byte);
     }
@@ -119,7 +119,7 @@ impl Sram {
         todo!()
     }
 
-    fn write_through(&mut self, address: usize, byte: u8) {
+    fn write_through(&mut self, address: usize, byte: Wrapping<u8>) {
         self.data[address] = byte;
         if let Some(file) = &mut self.file_backing {
             if let Err(e) = file.seek(std::io::SeekFrom::Start(address as u64)) {
@@ -127,7 +127,7 @@ impl Sram {
                 self.file_backing = None;
                 return;
             }
-            let buffer = [byte];
+            let buffer = [byte.0];
             file.write(&buffer).expect("Seek worked in file but not write");
         }
     }
@@ -136,11 +136,11 @@ impl Sram {
 impl ExternalRam for Sram {
 
     fn read_byte(&self, address: Wrapping<usize>) -> Wrapping<u8> {
-        Wrapping(self.data[(self.bank_offset + (address & Wrapping(0x1fff))).0])
+        self.data[(self.bank_offset + (address & Wrapping(0x1fff))).0]
     }
 
     fn write_byte(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
         let store_address = Wrapping((address & Wrapping(0x1fff)).0 % self.size_bytes) + self.bank_offset;
-        self.write_through(store_address.0, byte.0);
+        self.write_through(store_address.0, byte);
     }
 }

@@ -49,11 +49,11 @@ pub struct Emulator<A: AudioController> {
 
     // Mem bus
     pub rom: Rom,
-    pub wram: Vec<u8>,
-    pub vram: Vec<u8>,
+    pub wram: Vec<Wrapping<u8>>,
+    pub vram: Vec<Wrapping<u8>>,
     pub sram: Option<Sram>,
-    pub oam: Vec<u8>,
-    pub io_ports: Vec<u8>,
+    pub oam: Vec<Wrapping<u8>>,
+    pub io_ports: Vec<Wrapping<u8>>,
     vram_protected: bool,
     oam_protected: bool,
     rom_bank_offset: Wrapping<usize>,
@@ -120,11 +120,11 @@ impl<A: AudioController> Emulator<A> {
             current_clock_multiplier_combo: 10,
 
             rom,
-            wram: vec![0; 8 * 4096],
-            vram: vec![0; 2 * 8192],
+            wram: vec![Wrapping(0); 8 * 4096],
+            vram: vec![Wrapping(0); 2 * 8192],
             sram,
-            oam: vec![0; 160],
-            io_ports: vec![0; 256],
+            oam: vec![Wrapping(0); 160],
+            io_ports: vec![Wrapping(0); 256],
             vram_protected: false,
             oam_protected: false,
             rom_bank_offset: Wrapping(0),
@@ -194,10 +194,10 @@ impl<A: AudioController> Emulator<A> {
         }
 
         // Clear block memory
-        self.wram.fill(0);
-        self.vram.fill(0);
-        self.oam.fill(0);
-        self.io_ports.fill(0);
+        self.wram.fill(Wrapping(0));
+        self.vram.fill(Wrapping(0));
+        self.oam.fill(Wrapping(0));
+        self.io_ports.fill(Wrapping(0));
 
         // Set various state
         self.vram_protected = false;
@@ -208,43 +208,43 @@ impl<A: AudioController> Emulator<A> {
         self.rom_mbc_mode = 0;
 
         // Initialise IO ports
-        self.io_ports[5] = 0x00;
-        self.io_ports[6] = 0x00;
-        self.io_ports[7] = 0x00;
-        self.io_ports[16] = 0x80;
-        self.io_ports[17] = 0xbf;
-        self.io_ports[18] = 0xf3;
-        self.io_ports[20] = 0xbf;
-        self.io_ports[22] = 0x3f;
-        self.io_ports[23] = 0x00;
-        self.io_ports[25] = 0xbf;
-        self.io_ports[26] = 0x7f;
-        self.io_ports[27] = 0xff;
-        self.io_ports[28] = 0x9f;
-        self.io_ports[30] = 0xbf;
-        self.io_ports[32] = 0xff;
-        self.io_ports[33] = 0x00;
-        self.io_ports[34] = 0x00;
-        self.io_ports[35] = 0xbf;
-        self.io_ports[36] = 0x77;
-        self.io_ports[37] = 0xf3;
-        self.io_ports[64] = 0x91;
-        self.io_ports[66] = 0x00;
-        self.io_ports[67] = 0x00;
-        self.io_ports[69] = 0x00;
-        self.io_ports[71] = 0xfc;
-        self.io_ports[72] = 0xff;
-        self.io_ports[73] = 0xff;
-        self.io_ports[74] = 0x00;
-        self.io_ports[75] = 0x00;
-        self.io_ports[85] = 0xff;
-        self.io_ports[255] = 0x00;
+        self.io_ports[5] = Wrapping(0x00);
+        self.io_ports[6] = Wrapping(0x00);
+        self.io_ports[7] = Wrapping(0x00);
+        self.io_ports[16] = Wrapping(0x80);
+        self.io_ports[17] = Wrapping(0xbf);
+        self.io_ports[18] = Wrapping(0xf3);
+        self.io_ports[20] = Wrapping(0xbf);
+        self.io_ports[22] = Wrapping(0x3f);
+        self.io_ports[23] = Wrapping(0x00);
+        self.io_ports[25] = Wrapping(0xbf);
+        self.io_ports[26] = Wrapping(0x7f);
+        self.io_ports[27] = Wrapping(0xff);
+        self.io_ports[28] = Wrapping(0x9f);
+        self.io_ports[30] = Wrapping(0xbf);
+        self.io_ports[32] = Wrapping(0xff);
+        self.io_ports[33] = Wrapping(0x00);
+        self.io_ports[34] = Wrapping(0x00);
+        self.io_ports[35] = Wrapping(0xbf);
+        self.io_ports[36] = Wrapping(0x77);
+        self.io_ports[37] = Wrapping(0xf3);
+        self.io_ports[64] = Wrapping(0x91);
+        self.io_ports[66] = Wrapping(0x00);
+        self.io_ports[67] = Wrapping(0x00);
+        self.io_ports[69] = Wrapping(0x00);
+        self.io_ports[71] = Wrapping(0xfc);
+        self.io_ports[72] = Wrapping(0xff);
+        self.io_ports[73] = Wrapping(0xff);
+        self.io_ports[74] = Wrapping(0x00);
+        self.io_ports[75] = Wrapping(0x00);
+        self.io_ports[85] = Wrapping(0xff);
+        self.io_ports[255] = Wrapping(0x00);
 
         // Conditional state
         if cpu_type == CpuType::Sgb {
-            self.io_ports[38] = 0xf0;
+            self.io_ports[38] = Wrapping(0xf0);
         } else {
-            self.io_ports[38] = 0xf1;
+            self.io_ports[38] = Wrapping(0xf1);
         }
 
         self.is_running = true;
@@ -424,7 +424,7 @@ impl<A: AudioController> Emulator<A> {
                 }
                 self.time_in_current_gpu_mode -= 204;
                 self.io_ports[0x44] += 1;
-                if self.io_ports[0x44] == 144 {
+                if self.io_ports[0x44].0 == 144 {
                     self.gpu_mode = GpuMode::VBlank;
                     self.io_ports[0x41] &= 0xfc;
                     self.io_ports[0x41] |= GpuMode::VBlank as u8;
@@ -432,7 +432,7 @@ impl<A: AudioController> Emulator<A> {
                     self.io_ports[0x0f] |= 0x01;
                     self.oam_protected = false;
                     self.vram_protected = false;
-                    if (self.io_ports[0x41] & 0x10) != 0x00 {
+                    if (self.io_ports[0x41].0 & 0x10) != 0x00 {
                         // Request status int if condition met
                         self.io_ports[0x0f] |= 0x02;
                     }
@@ -452,7 +452,7 @@ impl<A: AudioController> Emulator<A> {
                     self.io_ports[0x41] |= GpuMode::ScanOam as u8;
                     self.oam_protected = true;
                     self.vram_protected = false;
-                    if (self.io_ports[0x41] & 0x20) != 0x00 {
+                    if (self.io_ports[0x41].0 & 0x20) != 0x00 {
                         // Request status int if condition met
                         self.io_ports[0x0f] |= 0x02;
                     }
@@ -465,14 +465,14 @@ impl<A: AudioController> Emulator<A> {
                 // 10 of these lines in vblank
                 self.time_in_current_gpu_mode -= 456;
                 self.io_ports[0x44] += 1;
-                if self.io_ports[0x44] >= 154 {
+                if self.io_ports[0x44].0 >= 154 {
                     self.gpu_mode = GpuMode::ScanOam;
                     self.io_ports[0x41] &= 0xfc;
                     self.io_ports[0x41] |= GpuMode::ScanOam as u8;
-                    self.io_ports[0x44] = 0;
+                    self.io_ports[0x44] = Wrapping(0);
                     self.oam_protected = true;
                     self.vram_protected = false;
-                    if (self.io_ports[0x41] & 0x20) != 0x00 {
+                    if (self.io_ports[0x41].0 & 0x20) != 0x00 {
                         // Request status int if condition met
                         self.io_ports[0x0f] |= 0x02;
                     }
@@ -502,17 +502,17 @@ impl<A: AudioController> Emulator<A> {
                 self.io_ports[0x41] |= GpuMode::HBlank as u8;
                 self.oam_protected = false;
                 self.vram_protected = false;
-                if (self.io_ports[0x41] & 0x08) != 0x00 {
+                if (self.io_ports[0x41].0 & 0x08) != 0x00 {
                     // Request status int if condition met
                     self.io_ports[0x0f] |= 0x02;
                 }
                 // Run DMA if applicable
-                if self.io_ports[0x55] < 0xff {
+                if self.io_ports[0x55].0 < 0xff {
                     // H-blank DMA currently active
-                    let mut src_addr = Wrapping(((self.io_ports[0x51] as usize) << 8) + self.io_ports[0x52] as usize); // DMA source
+                    let mut src_addr = Wrapping(((self.io_ports[0x51].0 as usize) << 8) + self.io_ports[0x52].0 as usize); // DMA source
                     // Don't do transfers within VRAM or from these other addresses either
                     if (src_addr.0 & 0xe000) != 0x8000 && src_addr.0 < 0xe000 {
-                        let mut dst_addr = Wrapping(((self.io_ports[0x53] as usize) << 8) + self.io_ports[0x54] as usize + 0x8000); // DMA destination
+                        let mut dst_addr = Wrapping(((self.io_ports[0x53].0 as usize) << 8) + self.io_ports[0x54].0 as usize + 0x8000); // DMA destination
                         for count in 0..16 {
                             self.write_address(dst_addr, self.read_address(src_addr));
                             src_addr += 1;
@@ -524,9 +524,9 @@ impl<A: AudioController> Emulator<A> {
                     //if (ClockFreq == GBC_FREQ) clocks_acc -= 64;
                     //else clocks_acc -= 32;
                     self.io_ports[0x55] -= 1;
-                    if self.io_ports[0x55] < 0x80 {
+                    if self.io_ports[0x55].0 < 0x80 {
                         // End the DMA
-                        self.io_ports[0x55] = 0xff;
+                        self.io_ports[0x55].0 = 0xff;
                     }
                 }
 
@@ -606,7 +606,7 @@ impl<A: AudioController> Emulator<A> {
                     self.serial_is_transferring = false;
                     self.io_ports[0x02] &= 0x03;
                     self.io_ports[0x0f] |= 0x08;
-                    self.io_ports[0x01] = 0xff;
+                    self.io_ports[0x01] = Wrapping(0xff);
                 }
             } else {
                 if self.serial_timer == 1 {
@@ -4332,14 +4332,14 @@ impl<A: AudioController> Emulator<A> {
     pub fn read_address(&self, address: Wrapping<usize>) -> Wrapping<u8> {
         let masked_address = address & Wrapping(0xffff);
         match masked_address.0 {
-            0x0000..=0x3fff => Wrapping(self.rom.data[masked_address.0]),
-            0x4000..=0x7fff => Wrapping(self.rom.data[(self.rom_bank_offset + masked_address).0]),
-            0x8000..=0x9fff => Wrapping(self.vram[(self.vram_bank_offset + masked_address - Wrapping(0x8000)).0]),
+            0x0000..=0x3fff => self.rom.data[masked_address.0],
+            0x4000..=0x7fff => self.rom.data[(self.rom_bank_offset + masked_address).0],
+            0x8000..=0x9fff => self.vram[(self.vram_bank_offset + masked_address - Wrapping(0x8000)).0],
             0xa000..=0xbfff => {
                 if let Some(sram) = &self.sram {
                     if sram.has_timer && sram.timer_mode > 0 {
                         // TODO - Check this bit
-                        Wrapping(sram.timer_data[sram.timer_mode as usize - 0x08])
+                        sram.timer_data[sram.timer_mode as usize - 0x08]
                     } else {
                         sram.read_byte(masked_address - Wrapping(0xa000))
                     }
@@ -4347,20 +4347,20 @@ impl<A: AudioController> Emulator<A> {
                     Wrapping(0xff)
                 }
             },
-            0xc000..=0xcfff => Wrapping(self.wram[(masked_address - Wrapping(0xc000)).0]),
-            0xd000..=0xdfff => Wrapping(self.wram[(self.wram_bank_offset + masked_address - Wrapping(0xd000)).0]),
-            0xe000..=0xefff => Wrapping(self.wram[(masked_address - Wrapping(0xe000)).0]),
-            0xf000..=0xfdff => Wrapping(self.wram[(self.wram_bank_offset + masked_address - Wrapping(0xf000)).0]),
+            0xc000..=0xcfff => self.wram[(masked_address - Wrapping(0xc000)).0],
+            0xd000..=0xdfff => self.wram[(self.wram_bank_offset + masked_address - Wrapping(0xd000)).0],
+            0xe000..=0xefff => self.wram[(masked_address - Wrapping(0xe000)).0],
+            0xf000..=0xfdff => self.wram[(self.wram_bank_offset + masked_address - Wrapping(0xf000)).0],
             0xfe00..=0xfe9f => {
                 if self.oam_protected {
                     Wrapping(0xff)
                 } else {
-                    Wrapping(self.oam[(masked_address & Wrapping(0x00ff)).0 % 160])
+                    self.oam[(masked_address & Wrapping(0x00ff)).0 % 160]
                 }
             },
             0xfea0..=0xfeff => Wrapping(0xff),
             0xff00..=0xff7f => self.read_address(masked_address & Wrapping(0x007f)),
-            _ => Wrapping(self.io_ports[(masked_address & Wrapping(0x00ff)).0])
+            _ => self.io_ports[(masked_address & Wrapping(0x00ff)).0]
         }
     }
 
@@ -4507,7 +4507,7 @@ impl<A: AudioController> Emulator<A> {
 
                 // Mask to address within range 0x0000-0x1fff and write to that VRAM address
                 let masked_address = masked_address & Wrapping(0x1fff);
-                self.vram[(self.vram_bank_offset + masked_address).0] = byte.0;
+                self.vram[(self.vram_bank_offset + masked_address).0] = byte;
 
                 // Decode character set from GB format to something more computer-friendly, only if writing within tileset
                 if masked_address.0 >= 0x1800 {
@@ -4517,8 +4517,8 @@ impl<A: AudioController> Emulator<A> {
                 // Get the pair of bytes just modified (i.e. one row in the character)
                 // Note there are 384 characters in the map, per VRAM bank, each stored with 16 bytes
                 let relative_vram_address = masked_address & Wrapping(0x1ffe);
-                let byte1 = self.vram[(self.vram_bank_offset + relative_vram_address).0] as u32 & 0x000000ff;
-                let byte2 = self.vram[(self.vram_bank_offset + relative_vram_address + Wrapping(1)).0] as u32 & 0x000000ff;
+                let byte1 = self.vram[(self.vram_bank_offset + relative_vram_address).0].0 as u32 & 0x000000ff;
+                let byte2 = self.vram[(self.vram_bank_offset + relative_vram_address + Wrapping(1)).0].0 as u32 & 0x000000ff;
 
 
                 // Find the address into decoded data to update now
@@ -4544,8 +4544,8 @@ impl<A: AudioController> Emulator<A> {
                         if sram.has_timer {
                             if sram.timer_mode > 0 {
                                 sram.latch_timer_data();
-                                sram.write_timer_data(sram.timer_mode as usize, byte.0);
-                                sram.timer_data[sram.timer_mode as usize] = byte.0;  // TODO - Check this
+                                sram.write_timer_data(sram.timer_mode as usize, byte);
+                                sram.timer_data[sram.timer_mode as usize] = byte;  // TODO - Check this
                             } else if sram.bank_offset.0 < 0x8000 {
                                 sram.write_byte(masked_address, byte);
                             }
@@ -4561,20 +4561,20 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             0xc000..=0xcfff => {
-                self.wram[(masked_address & Wrapping(0x0fff)).0] = byte.0;
+                self.wram[(masked_address & Wrapping(0x0fff)).0] = byte;
             },
             0xd000..=0xdfff => {
-                self.wram[(self.wram_bank_offset + (masked_address & Wrapping(0x0fff))).0] = byte.0;
+                self.wram[(self.wram_bank_offset + (masked_address & Wrapping(0x0fff))).0] = byte;
             },
             0xe000..=0xefff => {
-                self.wram[(masked_address & Wrapping(0x0fff)).0] = byte.0;
+                self.wram[(masked_address & Wrapping(0x0fff)).0] = byte;
             },
             0xf000..=0xfdff => {
-                self.wram[(self.wram_bank_offset + (masked_address & Wrapping(0x0fff))).0] = byte.0;
+                self.wram[(self.wram_bank_offset + (masked_address & Wrapping(0x0fff))).0] = byte;
             },
             0xfe00..=0xfe9f => {
                 if !self.oam_protected {
-                    self.oam[(masked_address & Wrapping(0x00ff)).0 % 160] = byte.0;
+                    self.oam[(masked_address & Wrapping(0x00ff)).0 % 160] = byte;
                 }
             },
             0xfea0..=0xfeff => {}, // Unusable
@@ -4582,7 +4582,7 @@ impl<A: AudioController> Emulator<A> {
                 self.write_io(masked_address & Wrapping(0x007f), byte);
             },
             _ => {
-                self.io_ports[(masked_address & Wrapping(0x00ff)).0] = byte.0;
+                self.io_ports[(masked_address & Wrapping(0x00ff)).0] = byte;
             }
         }
     }

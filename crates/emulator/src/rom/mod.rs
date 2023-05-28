@@ -4,11 +4,12 @@ mod tests;
 
 use crate::emulator::CpuType;
 use crate::external_ram::Sram;
+use std::num::Wrapping;
 
 #[derive(Default)]
 pub struct Rom {
     pub valid: bool,
-    pub data: Vec<u8>,
+    pub data: Vec<Wrapping<u8>>,
     pub name: String,
     pub cgb_flag: bool,
     pub sgb_flag: bool,
@@ -249,9 +250,10 @@ impl Rom {
         }
 
         // Copy ROM data into new Vec
-        let mut rom_data: Vec<u8> = vec![0; 256 * 16384];
+        let wrapped_data: Vec<Wrapping<u8>> = data.iter().map(|&x| Wrapping(x)).collect();
+        let mut rom_data: Vec<Wrapping<u8>> = vec![Wrapping(0); 256 * 16384];
         let mut rom_slice = &mut rom_data[0..(size_bytes as usize)];
-        rom_slice.copy_from_slice(&data[0..(size_bytes as usize)]);
+        rom_slice.copy_from_slice(&wrapped_data[0..(size_bytes as usize)]);
 
         Self {
             valid: true,
