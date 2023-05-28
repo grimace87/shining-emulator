@@ -5,6 +5,7 @@ use crate::external_ram::ExternalRam;
 use dirs::home_dir;
 use std::fs::File;
 use std::io::{BufWriter, Read, Seek, Write, Error, ErrorKind};
+use std::num::Wrapping;
 use std::path::PathBuf;
 
 const HOME_SAVE_DIR: &str = ".shining-emulator";
@@ -17,7 +18,7 @@ pub struct Sram {
     pub timer_data: [u8; 5],
     pub timer_mode: u32,
     pub timer_latch: u32,
-    pub bank_offset: usize,
+    pub bank_offset: Wrapping<usize>,
     size_enum: u8,
     pub size_bytes: usize,
     bank_select_mask: u8,
@@ -60,7 +61,7 @@ impl Sram {
             timer_data: [0, 0, 0, 0, 0],
             timer_mode: 0,
             timer_latch: 0,
-            bank_offset: 0,
+            bank_offset: Wrapping(0),
             size_enum: 0,
             size_bytes: rom.sram_size_bytes,
             bank_select_mask: 0,
@@ -77,7 +78,7 @@ impl Sram {
         self.timer_data.fill(0);
         self.timer_mode = 0;
         self.timer_latch = 0;
-        self.bank_offset = 0;
+        self.bank_offset = Wrapping(0);
         self.bank_select_mask = 0;
         self.enable_flag = false;
     }
@@ -134,12 +135,12 @@ impl Sram {
 
 impl ExternalRam for Sram {
 
-    fn read_byte(&self, address: usize) -> u8 {
-        self.data[self.bank_offset + (address & 0x1fff)]
+    fn read_byte(&self, address: Wrapping<usize>) -> Wrapping<u8> {
+        Wrapping(self.data[(self.bank_offset + (address & Wrapping(0x1fff))).0])
     }
 
-    fn write_byte(&mut self, address: usize, byte: u8) {
-        let store_address = (address & 0x1fff) % self.size_bytes + self.bank_offset;
-        self.write_through(store_address, byte);
+    fn write_byte(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
+        let store_address = Wrapping((address & Wrapping(0x1fff)).0 % self.size_bytes) + self.bank_offset;
+        self.write_through(store_address.0, byte.0);
     }
 }

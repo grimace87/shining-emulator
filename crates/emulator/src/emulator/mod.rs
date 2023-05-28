@@ -1,11 +1,11 @@
 
-use crate::audio::{AudioController, DummyAudioController};
+use crate::audio::AudioController;
 use crate::external_ram::{Sram, ExternalRam};
 use crate::input::Input;
 use crate::rom::{Rom, Mbc};
 use crate::sgb::Sgb;
 
-use std::cell::RefCell;
+use std::num::Wrapping;
 
 const CLOCK_MULTIPLIERS: [i64; 21] = [  1,  1,  1, 1, 1, 2, 1, 4, 2, 4, 1, 5, 3, 7, 2, 5, 3, 5, 8, 12, 20 ];
 const CLOCK_DIVISORS: [i64; 21] =    [ 20, 12,  8, 5, 3, 5, 2, 7, 3, 5, 1, 4, 2, 4, 1, 2, 1, 1, 1,  1,  1 ];
@@ -56,23 +56,23 @@ pub struct Emulator<A: AudioController> {
     pub io_ports: Vec<u8>,
     vram_protected: bool,
     oam_protected: bool,
-    rom_bank_offset: usize,
-    wram_bank_offset: usize,
-    vram_bank_offset: usize,
+    rom_bank_offset: Wrapping<usize>,
+    wram_bank_offset: Wrapping<usize>,
+    vram_bank_offset: Wrapping<usize>,
     rom_mbc_mode: u32,
 
     // CPU
     cpu_type: CpuType,
-    pc: usize,
-    sp: usize,
-    a: u8,
-    f: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    h: u8,
-    l: u8,
+    pc: Wrapping<usize>,
+    sp: Wrapping<usize>,
+    a: Wrapping<u8>,
+    f: Wrapping<u8>,
+    b: Wrapping<u8>,
+    c: Wrapping<u8>,
+    d: Wrapping<u8>,
+    e: Wrapping<u8>,
+    h: Wrapping<u8>,
+    l: Wrapping<u8>,
     mode: Mode,
     is_running: bool,
     is_paused: bool,
@@ -89,7 +89,7 @@ pub struct Emulator<A: AudioController> {
 
     // GPU
     gpu_clock_factor: u32,
-    time_in_current_gpu_mode: u32,
+    time_in_current_gpu_mode: Wrapping<u32>,
     blanked_screen: bool,
     needing_clear: bool,
     gpu_mode: GpuMode,
@@ -127,22 +127,22 @@ impl<A: AudioController> Emulator<A> {
             io_ports: vec![0; 256],
             vram_protected: false,
             oam_protected: false,
-            rom_bank_offset: 0,
-            wram_bank_offset: 0,
-            vram_bank_offset: 0,
+            rom_bank_offset: Wrapping(0),
+            wram_bank_offset: Wrapping(0),
+            vram_bank_offset: Wrapping(0),
             rom_mbc_mode: 0,
 
             cpu_type,
-            pc: 0,
-            sp: 0,
-            a: 0,
-            f: 0,
-            b: 0,
-            c: 0,
-            d: 0,
-            e: 0,
-            h: 0,
-            l: 0,
+            pc: Wrapping(0),
+            sp: Wrapping(0),
+            a: Wrapping(0),
+            f: Wrapping(0),
+            b: Wrapping(0),
+            c: Wrapping(0),
+            d: Wrapping(0),
+            e: Wrapping(0),
+            h: Wrapping(0),
+            l: Wrapping(0),
             mode: Mode::Stopped,
             is_running: false,
             is_paused: false,
@@ -158,7 +158,7 @@ impl<A: AudioController> Emulator<A> {
             key_state_changed: false,
 
             gpu_clock_factor: 1,
-            time_in_current_gpu_mode: 0,
+            time_in_current_gpu_mode: Wrapping(0),
             blanked_screen: false,
             needing_clear: false,
             gpu_mode: GpuMode::VBlank,
@@ -202,9 +202,9 @@ impl<A: AudioController> Emulator<A> {
         // Set various state
         self.vram_protected = false;
         self.oam_protected = false;
-        self.rom_bank_offset = 0x4000;
-        self.wram_bank_offset = 0x1000;
-        self.vram_bank_offset = 0x0000;
+        self.rom_bank_offset = Wrapping(0x4000);
+        self.wram_bank_offset = Wrapping(0x1000);
+        self.vram_bank_offset = Wrapping(0x0000);
         self.rom_mbc_mode = 0;
 
         // Initialise IO ports
@@ -260,7 +260,7 @@ impl<A: AudioController> Emulator<A> {
 
         self.gpu_clock_factor = 1;
         self.gpu_mode = GpuMode::ScanOam;
-        self.time_in_current_gpu_mode = 0;
+        self.time_in_current_gpu_mode = Wrapping(0);
         self.blanked_screen = false;
         self.cgb_bg_pal_index = 0;
         self.cgb_obj_pal_index = 0;
@@ -271,28 +271,28 @@ impl<A: AudioController> Emulator<A> {
         self.serial_timer = 0;
 
         // Set various state
-        self.pc = 0x0100;
-        self.sp = 0xfffe;
-        self.f = 0xb0;
-        self.b = 0x00;
-        self.c = 0x13;
-        self.d = 0x00;
-        self.e = 0xd8;
-        self.h = 0x01;
-        self.l = 0x4d;
+        self.pc.0 = 0x0100;
+        self.sp.0 = 0xfffe;
+        self.f.0 = 0xb0;
+        self.b.0 = 0x00;
+        self.c.0 = 0x13;
+        self.d.0 = 0x00;
+        self.e.0 = 0xd8;
+        self.h.0 = 0x01;
+        self.l.0 = 0x4d;
 
         // Hardware-dependent state
         match cpu_type {
             CpuType::Dmg => {
-                self.a = 0x01;
+                self.a.0 = 0x01;
                 self.clock_frequency = GB_FREQ;
             },
             CpuType::Sgb => {
-                self.a = 0x11;
+                self.a.0 = 0x11;
                 self.clock_frequency = SGB_FREQ;
             },
             CpuType::Cgb => {
-                self.a = 0x11;
+                self.a.0 = 0x11;
                 self.clock_frequency = GB_FREQ;
             }
         }
@@ -356,7 +356,7 @@ impl<A: AudioController> Emulator<A> {
         if self.blanked_screen {
             return;
         }
-        self.time_in_current_gpu_mode = 0;
+        self.time_in_current_gpu_mode = Wrapping(0);
         self.gpu_mode = GpuMode::ScanOam;
         self.blanked_screen = true;
 
@@ -378,31 +378,31 @@ impl<A: AudioController> Emulator<A> {
             self.key_state_changed = false;
 
             // Adjust value in keypad register
-            let upper_bits = self.read_address(0xff00) & 0x30;
+            let upper_bits = self.read_address(Wrapping(0xff00)).0 & 0x30;
             if upper_bits == 0x20 {
-                self.perform_and(0xff00, 0xf0);
-                self.perform_or(0xff00, self.current_key_dir);
+                self.perform_and(Wrapping(0xff00), Wrapping(0xf0));
+                self.perform_or(Wrapping(0xff00), Wrapping(self.current_key_dir));
             } else if upper_bits == 0x10 {
-                self.perform_and(0xff00, 0xf0);
-                self.perform_or(0xff00, self.current_key_but);
+                self.perform_and(Wrapping(0xff00), Wrapping(0xf0));
+                self.perform_or(Wrapping(0xff00), Wrapping(self.current_key_but));
             }
 
             // Set interrupt request flag
-            self.perform_or(0xff0f, 0x10);
+            self.perform_or(Wrapping(0xff0f), Wrapping(0x10));
         }
 
         let mut remaining_clocks = accumulated_clocks;
         while remaining_clocks > 0 {
             let progress = self.emulate_next_step() as i64;
             if progress <= 32 {
-                let display_enabled = (self.read_address(0xff40) & 0x80) != 0;
+                let display_enabled = (self.read_address(Wrapping(0xff40)).0 & 0x80) != 0;
                 if display_enabled {
                     self.emulate_gpu(progress);
                 } else {
                     if !self.blanked_screen {
                         self.set_oam_protection(false);
                         self.set_vram_protection(false);
-                        self.write_address(0xff44, 0);
+                        self.write_address(Wrapping(0xff44), Wrapping(0));
                         self.on_display_disabled();
                     }
                 }
@@ -419,7 +419,7 @@ impl<A: AudioController> Emulator<A> {
         match self.gpu_mode {
             GpuMode::HBlank => {
                 // Spends 204 cycles here, then moves to next line. After 144th hblank, move to vblank.
-                if self.time_in_current_gpu_mode < 204 {
+                if self.time_in_current_gpu_mode.0 < 204 {
                     return;
                 }
                 self.time_in_current_gpu_mode -= 204;
@@ -459,7 +459,7 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             GpuMode::VBlank => {
-                if self.time_in_current_gpu_mode < 456 {
+                if self.time_in_current_gpu_mode.0 < 456 {
                     return;
                 }
                 // 10 of these lines in vblank
@@ -482,7 +482,7 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             GpuMode::ScanOam => {
-                if self.time_in_current_gpu_mode < 80 {
+                if self.time_in_current_gpu_mode.0 < 80 {
                     return;
                 }
                 self.time_in_current_gpu_mode -= 80;
@@ -493,7 +493,7 @@ impl<A: AudioController> Emulator<A> {
                 self.vram_protected = true;
             },
             GpuMode::ScanVram => {
-                if self.time_in_current_gpu_mode < 172 {
+                if self.time_in_current_gpu_mode.0 < 172 {
                     return;
                 }
                 self.time_in_current_gpu_mode -= 172;
@@ -509,14 +509,14 @@ impl<A: AudioController> Emulator<A> {
                 // Run DMA if applicable
                 if self.io_ports[0x55] < 0xff {
                     // H-blank DMA currently active
-                    let mut src_addr = ((self.io_ports[0x51] as usize) << 8) + self.io_ports[0x52] as usize; // DMA source
+                    let mut src_addr = Wrapping(((self.io_ports[0x51] as usize) << 8) + self.io_ports[0x52] as usize); // DMA source
                     // Don't do transfers within VRAM or from these other addresses either
-                    if (src_addr & 0xe000) != 0x8000 && src_addr < 0xe000 {
-                        let mut dst_addr = ((self.io_ports[0x53] as usize) << 8) + self.io_ports[0x54] as usize + 0x8000; // DMA destination
+                    if (src_addr.0 & 0xe000) != 0x8000 && src_addr.0 < 0xe000 {
+                        let mut dst_addr = Wrapping(((self.io_ports[0x53] as usize) << 8) + self.io_ports[0x54] as usize + 0x8000); // DMA destination
                         for count in 0..16 {
                             self.write_address(dst_addr, self.read_address(src_addr));
                             src_addr += 1;
-                            dst_addr = (dst_addr + 1) & 0x9fff; // Keep it within VRAM
+                            dst_addr = (dst_addr + Wrapping(1)) & Wrapping(0x9fff); // Keep it within VRAM
                         }
                     }
 
@@ -560,19 +560,19 @@ impl<A: AudioController> Emulator<A> {
         }
 
         // Permanent compare of LY and LYC
-        let display_enabled = (self.read_address(0xff40) & 0x80) != 0;
-        if display_enabled && self.read_address(0xff44) == self.read_address(0xff45) {
+        let display_enabled = (self.read_address(Wrapping(0xff40)) & Wrapping(0x80)).0 != 0;
+        if display_enabled && self.read_address(Wrapping(0xff44)) == self.read_address(Wrapping(0xff45)) {
 
             // Set coincidence flag
-            self.perform_or(0xff41, 0x04);
+            self.perform_or(Wrapping(0xff41), Wrapping(0x04));
 
             // Request interrupt if his signal goes low to high
-            if (self.read_address(0xff41) & 0x40) != 0 && self.last_ly_compare == 0 {
-                self.perform_or(0xff0f, 0x02);
+            if (self.read_address(Wrapping(0xff41)).0 & 0x40) != 0 && self.last_ly_compare == 0 {
+                self.perform_or(Wrapping(0xff0f), Wrapping(0x02));
             }
             self.last_ly_compare = 1;
         } else {
-            self.perform_and(0xff41, 0xfb);
+            self.perform_and(Wrapping(0xff41), Wrapping(0xfb));
             self.last_ly_compare = 0;
         }
 
@@ -580,17 +580,17 @@ impl<A: AudioController> Emulator<A> {
         self.divider_count += clocks_passed_by_instruction as u32;
         if self.divider_count >= 256 {
             self.divider_count -= 256;
-            self.write_address(0xff04, self.read_address(0xff04) + 1);
+            self.write_address(Wrapping(0xff04), self.read_address(Wrapping(0xff04)) + Wrapping(1));
         }
         if self.timer_running {
             self.timer_count += 1;
             if self.timer_count >= self.timer_inc_time {
                 self.timer_count -= self.timer_inc_time;
-                let new_register = self.read_address(0xff05) + 1;
-                self.write_address(0xff05, new_register);
-                if new_register == 0 {
-                    self.write_address(0xff05, self.read_address(0xff06));
-                    self.perform_or(0xff0f, 0x04);
+                let new_register = self.read_address(Wrapping(0xff05)) + Wrapping(1);
+                self.write_address(Wrapping(0xff05), new_register);
+                if new_register.0 == 0 {
+                    self.write_address(Wrapping(0xff05), self.read_address(Wrapping(0xff06)));
+                    self.perform_or(Wrapping(0xff0f), Wrapping(0x04));
                 }
             }
         }
@@ -621,7 +621,7 @@ impl<A: AudioController> Emulator<A> {
     #[inline]
     fn process_interrupts(&mut self, cpu_halted: bool) {
 
-        let triggered_interrupts = self.read_address(0xffff) & self.read_address(0xff0f) & 0x1f;
+        let triggered_interrupts = self.read_address(Wrapping(0xffff)).0 & self.read_address(Wrapping(0xff0f)).0 & 0x1f;
         if triggered_interrupts == 0 {
             return;
         }
@@ -629,31 +629,31 @@ impl<A: AudioController> Emulator<A> {
         let mut to_address = self.pc;
         if (triggered_interrupts & 0x01) != 0 {
             // V-blank
-            self.perform_and(0xff0f, 0x1e);
-            to_address = 0x0040;
+            self.perform_and(Wrapping(0xff0f), Wrapping(0x1e));
+            to_address.0 = 0x0040;
         } else if (triggered_interrupts & 0x02) != 0 {
             // LCD stat
-            self.perform_and(0xff0f, 0x1d);
-            to_address = 0x0048;
+            self.perform_and(Wrapping(0xff0f), Wrapping(0x1d));
+            to_address.0 = 0x0048;
         } else if (triggered_interrupts & 0x04) != 0 {
             // Timer
-            self.perform_and(0xff0f, 0x1b);
-            to_address = 0x0050;
+            self.perform_and(Wrapping(0xff0f), Wrapping(0x1b));
+            to_address.0 = 0x0050;
         } else if (triggered_interrupts & 0x08) != 0 {
             // Serial
-            self.perform_and(0xff0f, 0x17);
-            to_address = 0x0058;
+            self.perform_and(Wrapping(0xff0f), Wrapping(0x17));
+            to_address.0 = 0x0058;
         } else if (triggered_interrupts & 0x10) != 0 {
             // Joypad
-            self.perform_and(0xff0f, 0x0f);
-            to_address = 0x0060;
+            self.perform_and(Wrapping(0xff0f), Wrapping(0x0f));
+            to_address.0 = 0x0060;
         }
 
         // Unless halted with IME unset, push PC onto stack and go to interrupt handler address
         if !cpu_halted || self.ime {
             self.sp -= 2;
             self.write_address_16(
-                self.sp as usize, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
+                self.sp, (Wrapping((self.pc.0 & 0xff) as u8), Wrapping((self.pc >> 8).0 as u8)));
             self.pc = to_address;
         }
         self.mode = Mode::Running;
@@ -661,18 +661,18 @@ impl<A: AudioController> Emulator<A> {
     }
 
     #[inline]
-    fn get_address_hl(&self) -> usize {
-        ((self.h as usize) << 8) + (self.l as usize)
+    fn get_address_hl(&self) -> Wrapping<usize> {
+        Wrapping(((self.h.0 as usize) << 8) + self.l.0 as usize)
     }
 
     #[inline]
-    fn read_byte_hl(&self) -> u8 {
-        self.read_address(((self.h as usize) << 8) + self.l as usize)
+    fn read_byte_hl(&self) -> Wrapping<u8> {
+        self.read_address(Wrapping(((self.h.0 as usize) << 8) + self.l.0 as usize))
     }
 
     #[inline]
-    fn write_byte_hl(&mut self, byte: u8) {
-        self.write_address(((self.h as usize) << 8) + self.l as usize, byte);
+    fn write_byte_hl(&mut self, byte: Wrapping<u8>) {
+        self.write_address(Wrapping(((self.h.0 as usize) << 8) + self.l.0 as usize), byte);
     }
 
     #[inline]
@@ -712,18 +712,18 @@ impl<A: AudioController> Emulator<A> {
 
     #[inline]
     fn switch_running_speed(&mut self) -> bool {
-        let speed_change_requested = self.cpu_type == CpuType::Cgb && self.read_address(0xff4d) == 0x01;
+        let speed_change_requested = self.cpu_type == CpuType::Cgb && self.read_address(Wrapping(0xff4d)).0 == 0x01;
         if speed_change_requested {
             // Speed change was requested in CGB mode
-            self.perform_and(0xff4d, 0x80);
-            let new_byte = self.read_address(0xff4d);
-            if new_byte == 0x00 {
-                self.write_address(0xff4d, 0x80);
+            self.perform_and(Wrapping(0xff4d), Wrapping(0x80));
+            let new_byte = self.read_address(Wrapping(0xff4d));
+            if new_byte.0 == 0x00 {
+                self.write_address(Wrapping(0xff4d), Wrapping(0x80));
                 self.clock_frequency = CGB_FREQ;
                 self.gpu_clock_factor = 2;
                 return true;
             } else {
-                self.write_address(0xff4d, 0x00);
+                self.write_address(Wrapping(0xff4d), Wrapping(0x00));
                 self.clock_frequency = GB_FREQ;
                 self.gpu_clock_factor = 1;
                 return true;
@@ -734,26 +734,26 @@ impl<A: AudioController> Emulator<A> {
 
     #[inline]
     fn perform_op(&mut self) -> u64 {
-        let instr = self.read_address(self.pc);
+        let instr = self.read_address(self.pc).0;
         match instr {
             0x00 => { // nop
                 self.pc += 1;
                 4
             },
             0x01 => { // ld BC, nn
-                self.b = self.read_address(self.pc + 2);
-                self.c = self.read_address(self.pc + 1);
+                self.b = self.read_address(self.pc + Wrapping(2));
+                self.c = self.read_address(self.pc + Wrapping(1));
                 self.pc += 3;
                 12
             },
             0x02 => { // ld (BC), A
-                self.write_address(((self.b as usize) << 8) + self.c as usize, self.a);
+                self.write_address(Wrapping(((self.b.0 as usize) << 8) + self.c.0 as usize), self.a);
                 self.pc += 1;
                 8
             },
             0x03 => { // inc BC
                 self.c += 1;
-                if self.c == 0x00 {
+                if self.c.0 == 0x00 {
                     self.b += 1;
                 }
                 self.pc += 1;
@@ -762,28 +762,28 @@ impl<A: AudioController> Emulator<A> {
             0x04 => { // inc B
                 self.f &= 0x10;
                 self.b += 0x01;
-                self.set_z_on_zero(self.b);
-                self.set_h_on_zero(self.b & 0x0f);
+                self.set_z_on_zero(self.b.0);
+                self.set_h_on_zero(self.b.0 & 0x0f);
                 self.pc += 1;
                 4
             },
             0x05 => { // dec B
                 self.f &= 0x10;
                 self.f |= 0x40;
-                self.set_h_on_zero(self.b & 0x0f);
+                self.set_h_on_zero(self.b.0 & 0x0f);
                 self.b -= 0x01;
-                self.set_z_on_zero(self.b);
+                self.set_z_on_zero(self.b.0);
                 self.pc += 1;
                 4
             },
             0x06 => { // ld B, n
-                self.b = self.read_address(self.pc + 1);
+                self.b = self.read_address(self.pc + Wrapping(1));
                 self.pc += 2;
                 8
             },
             0x07 => { // rlc A (rotate bit 7 to bit 0, and copy bit 7 to carry flag)
-                let temp_byte = self.a & 0x80; // True if bit 7 is set
-                self.f = 0x00;
+                let temp_byte = self.a.0 & 0x80; // True if bit 7 is set
+                self.f.0 = 0x00;
                 self.a = self.a << 1;
                 if temp_byte != 0 {
                     self.f |= 0x10; // Set carry
@@ -794,8 +794,8 @@ impl<A: AudioController> Emulator<A> {
             },
             0x08 => { // ld (nn), SP
                 self.write_address_16(
-                    ((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize,
-                    ((self.sp & 0x00ff) as u8, ((self.sp >> 8) & 0x00ff) as u8)
+                    Wrapping(((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize),
+                    (Wrapping((self.sp.0 & 0x00ff) as u8), Wrapping(((self.sp.0 >> 8) & 0x00ff) as u8))
                 );
                 self.pc += 3;
                 20
@@ -805,22 +805,22 @@ impl<A: AudioController> Emulator<A> {
                 self.l += self.c;
                 if self.l < self.c {
                     self.h += 1;
-                    self.set_c_on_condition(self.h == 0x00);
-                    self.set_h_on_zero(self.h & 0x0f);
+                    self.set_c_on_condition(self.h.0 == 0x00);
+                    self.set_h_on_zero(self.h.0 & 0x0f);
                 }
                 self.h += self.b;
                 self.set_c_on_condition(self.h < self.b);
-                self.set_h_on_condition((self.h & 0x0f) < (self.b & 0x0f));
+                self.set_h_on_condition((self.h.0 & 0x0f) < (self.b.0 & 0x0f));
                 self.pc += 1;
                 8
             },
             0x0a => { // ld A, (BC)
-                self.a = self.read_address(((self.b as usize) << 8) + self.c as usize);
+                self.a = self.read_address(Wrapping(((self.b.0 as usize) << 8) + self.c.0 as usize));
                 self.pc += 1;
                 8
             },
             0x0b => { // dec BC
-                if self.c == 0x00 {
+                if self.c.0 == 0x00 {
                     self.b -= 1;
                 }
                 self.c -= 1;
@@ -830,32 +830,32 @@ impl<A: AudioController> Emulator<A> {
             0x0c => { // inc C
                 self.f &= 0x10;
                 self.c += 0x01;
-                self.set_z_on_zero(self.c);
-                self.set_h_on_zero(self.c & 0x0f);
+                self.set_z_on_zero(self.c.0);
+                self.set_h_on_zero(self.c.0 & 0x0f);
                 self.pc += 1;
                 4
             },
             0x0d => { // dec C
                 self.f &= 0x10;
                 self.f |= 0x40;
-                self.set_h_on_zero(self.c & 0x0f);
+                self.set_h_on_zero(self.c.0 & 0x0f);
                 self.c -= 0x01;
-                self.set_z_on_zero(self.c);
+                self.set_z_on_zero(self.c.0);
                 self.pc += 1;
                 4
             },
             0x0e => { // ld C, n
-                self.c = self.read_address(self.pc + 1);
+                self.c = self.read_address(self.pc + Wrapping(1));
                 self.pc += 2;
                 8
             },
             0x0f => { // rrc A (8-bit rotation right - bit 0 is moved to carry also)
-                let temp_byte = self.a & 0x01;
-                self.f = 0x00;
+                let temp_byte = self.a.0 & 0x01;
+                self.f.0 = 0x00;
                 self.a = self.a >> 1;
-                self.a = self.a & 0x7f; // Clear msb in sign bit preserved by compiler
+                self.a &= 0x7f; // Clear msb in sign bit preserved by compiler
                 if temp_byte != 0 {
-                    self.f = 0x10;
+                    self.f.0 = 0x10;
                     self.a |= 0x80;
                 }
                 self.pc += 1;
@@ -867,19 +867,19 @@ impl<A: AudioController> Emulator<A> {
                 4
             },
             0x11 => { // ld DE, nn
-                self.d = self.read_address(self.pc + 2);
-                self.e = self.read_address(self.pc + 1);
+                self.d = self.read_address(self.pc + Wrapping(2));
+                self.e = self.read_address(self.pc + Wrapping(1));
                 self.pc += 3;
                 12
             },
             0x12 => { // ld (DE), A
-                self.write_address(((self.d as usize) << 8) + self.e as usize, self.a);
+                self.write_address(Wrapping(((self.d.0 as usize) << 8) + self.e.0 as usize), self.a);
                 self.pc += 1;
                 8
             },
             0x13 => { // inc DE
                 self.e += 1;
-                if self.e == 0x00 {
+                if self.e.0 == 0x00 {
                     self.d += 1;
                 }
                 self.pc += 1;
@@ -888,38 +888,38 @@ impl<A: AudioController> Emulator<A> {
             0x14 => { // inc D
                 self.f &= 0x10;
                 self.d += 0x01;
-                self.set_z_on_zero(self.d);
-                self.set_h_on_zero(self.d & 0x0f);
+                self.set_z_on_zero(self.d.0);
+                self.set_h_on_zero(self.d.0 & 0x0f);
                 self.pc += 1;
                 4
             },
             0x15 => { // dec D
                 self.f &= 0x10;
                 self.f |= 0x40;
-                self.set_h_on_zero(self.d & 0x0f);
+                self.set_h_on_zero(self.d.0 & 0x0f);
                 self.d -= 0x01;
-                self.set_z_on_zero(self.d);
+                self.set_z_on_zero(self.d.0);
                 self.pc += 1;
                 4
             },
             0x16 => { // ld D, n
-                self.d = self.read_address(self.pc + 1);
+                self.d = self.read_address(self.pc + Wrapping(1));
                 self.pc += 2;
                 8
             },
             0x17 => { // rl A (rotate carry bit to bit 0 of A)
-                let temp_byte = self.f & 0x10; // True if carry flag was set
-                self.f = 0x00;
-                self.set_c_on_condition((self.a & 0x80) != 0); // Copy bit 7 to carry bit
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x00;
+                self.set_c_on_condition((self.a.0 & 0x80) != 0); // Copy bit 7 to carry bit
                 self.a = self.a << 1;
-                if temp_byte != 0 {
+                if carry_was_set {
                     self.a |= 0x01; // Copy carry flag to bit 0
                 }
                 self.pc += 1;
                 4
             },
             0x18 => { // jr d
-                let msb = self.read_address(self.pc + 1);
+                let msb = self.read_address(self.pc + Wrapping(1)).0;
                 if msb >= 0x80 {
                     self.pc -= 256 - msb as usize;
                 } else {
@@ -933,22 +933,22 @@ impl<A: AudioController> Emulator<A> {
                 self.l += self.e;
                 if self.l < self.e {
                     self.h += 1;
-                    self.set_c_on_condition(self.h == 0x00);
-                    self.set_h_on_zero(self.h & 0x0f);
+                    self.set_c_on_condition(self.h.0 == 0x00);
+                    self.set_h_on_zero(self.h.0 & 0x0f);
                 }
                 self.h += self.d;
                 self.set_c_on_condition(self.h < self.d);
-                self.set_h_on_condition((self.h & 0x0f) < (self.d & 0x0f));
+                self.set_h_on_condition((self.h.0 & 0x0f) < (self.d.0 & 0x0f));
                 self.pc += 1;
                 8
             },
             0x1a => { // ld A, (DE)
-                self.a = self.read_address(((self.d as usize) << 8) + self.e as usize);
+                self.a = self.read_address(Wrapping(((self.d.0 as usize) << 8) + self.e.0 as usize));
                 self.pc += 1;
                 8
             },
             0x1b => { // dec DE
-                if self.e == 0x00 {
+                if self.e.0 == 0x00 {
                     self.d -= 1;
                 }
                 self.e -= 1;
@@ -958,43 +958,43 @@ impl<A: AudioController> Emulator<A> {
             0x1c => { // inc E
                 self.f &= 0x10;
                 self.e += 0x01;
-                self.set_z_on_zero(self.e);
-                self.set_h_on_zero(self.e & 0x0f);
+                self.set_z_on_zero(self.e.0);
+                self.set_h_on_zero(self.e.0 & 0x0f);
                 self.pc += 1;
                 4
             },
             0x1d => { // dec E
                 self.f &= 0x10;
                 self.f |= 0x40;
-                self.set_h_on_zero(self.e & 0x0f);
+                self.set_h_on_zero(self.e.0 & 0x0f);
                 self.e -= 0x01;
-                self.set_z_on_zero(self.e);
+                self.set_z_on_zero(self.e.0);
                 self.pc += 1;
                 4
             },
             0x1e => { // ld E, n
-                self.e = self.read_address(self.pc + 1);
+                self.e = self.read_address(self.pc + Wrapping(1));
                 self.pc += 2;
                 8
             },
             0x1f => { // rr A (9-bit rotation right of A through carry)
-                let temp_byte = self.f & 0x10;
-                self.f = 0x00;
-                self.set_c_on_condition((self.a & 0x01) != 0x00);
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x00;
+                self.set_c_on_condition((self.a.0 & 0x01) != 0x00);
                 self.a = self.a >> 1;
-                self.a = self.a & 0x7f;
-                if temp_byte != 0x00 {
+                self.a.0 = self.a.0 & 0x7f;
+                if carry_was_set {
                     self.a |= 0x80;
                 }
                 self.pc += 1;
                 4
             },
             0x20 => { // jr NZ, d
-                if (self.f & 0x80) != 0 {
+                if (self.f.0 & 0x80) != 0 {
                     self.pc += 2;
                     8
                 } else {
-                    let msb = self.read_address(self.pc + 1);
+                    let msb = self.read_address(self.pc + Wrapping(1)).0;
                     if msb >= 0x80 {
                         self.pc -= 256 - msb as usize;
                     } else {
@@ -1005,15 +1005,15 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             0x21 => { // ld HL, nn
-                self.h = self.read_address(self.pc + 2);
-                self.l = self.read_address(self.pc + 1);
+                self.h = self.read_address(self.pc + Wrapping(2));
+                self.l = self.read_address(self.pc + Wrapping(1));
                 self.pc += 3;
                 12
             },
             0x22 => { // ldi (HL), A
                 self.write_byte_hl(self.a);
                 self.l += 1;
-                if self.l == 0x00 {
+                if self.l.0 == 0x00 {
                     self.h += 1; // L overflowed into H
                 }
                 self.pc += 1;
@@ -1021,7 +1021,7 @@ impl<A: AudioController> Emulator<A> {
             },
             0x23 => { // inc HL
                 self.l += 1;
-                if self.l == 0x00 {
+                if self.l.0 == 0x00 {
                     self.h += 1;
                 }
                 self.pc += 1;
@@ -1030,55 +1030,55 @@ impl<A: AudioController> Emulator<A> {
             0x24 => { // inc H
                 self.f &= 0x10;
                 self.h += 0x01;
-                self.set_z_on_zero(self.h);
-                self.set_h_on_zero(self.h & 0x0f);
+                self.set_z_on_zero(self.h.0);
+                self.set_h_on_zero(self.h.0 & 0x0f);
                 self.pc += 1;
                 4
             },
             0x25 => { // dec H
                 self.f &= 0x10;
                 self.f |= 0x40;
-                self.set_h_on_zero(self.h & 0x0f);
+                self.set_h_on_zero(self.h.0 & 0x0f);
                 self.h -= 0x01;
-                self.set_z_on_zero(self.h);
+                self.set_z_on_zero(self.h.0);
                 self.pc += 1;
                 4
             },
             0x26 => { // ld H, n
-                self.h = self.read_address(self.pc + 1);
+                self.h = self.read_address(self.pc + Wrapping(1));
                 self.pc += 2;
                 8
             },
             0x27 => { // daa (Decimal Adjust Accumulator - do BCD correction)
-                if (self.f & 0x40) == 0x00 {
-                    if ((self.a & 0x0f) > 0x09) || ((self.f & 0x20) != 0x00) { // If lower 4 bits are non-decimal or H is set, add 0x06
+                if (self.f.0 & 0x40) == 0x00 {
+                    if ((self.a.0 & 0x0f) > 0x09) || ((self.f.0 & 0x20) != 0x00) { // If lower 4 bits are non-decimal or H is set, add 0x06
                         self.a += 0x06;
                     }
-                    let temp_byte = self.f & 0x10;
+                    let carry_was_set = (self.f.0 & 0x10) != 0x00;
                     self.f &= 0x40; // Reset C, H and Z flags
-                    if (self.a > 0x9f) || (temp_byte != 0x00) { // If upper 4 bits are non-decimal or C was set, add 0x60
+                    if (self.a.0 > 0x9f) || carry_was_set { // If upper 4 bits are non-decimal or C was set, add 0x60
                         self.a += 0x60;
                         self.f |= 0x10; // Sets the C flag if this second addition was needed
                     }
                 } else {
                     // TODO - Check why comment says "add" but actually we subtract
-                    if ((self.a & 0x0f) > 0x09) || ((self.f & 0x20) != 0x00) { // If lower 4 bits are non-decimal or H is set, add 0x06
+                    if ((self.a.0 & 0x0f) > 0x09) || ((self.f.0 & 0x20) != 0x00) { // If lower 4 bits are non-decimal or H is set, add 0x06
                         self.a -= 0x06;
                     }
-                    let temp_byte = self.f & 0x10;
+                    let carry_was_set = (self.f.0 & 0x10) != 0x00;
                     self.f &= 0x40; // Reset C, H and Z flags
-                    if (self.a > 0x9f) || (temp_byte != 0x00) { // If upper 4 bits are non-decimal or C was set, add 0x60
+                    if (self.a.0 > 0x9f) || carry_was_set { // If upper 4 bits are non-decimal or C was set, add 0x60
                         self.a -= 0x60;
                         self.f |= 0x10; // Sets the C flag if this second addition was needed
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x28 => { // jr Z, d
-                if (self.f & 0x80) != 0x00 {
-                    let msb = self.read_address(self.pc + 1);
+                if (self.f.0 & 0x80) != 0x00 {
+                    let msb = self.read_address(self.pc + Wrapping(1)).0;
                     if msb >= 0x80 {
                         self.pc -= 256 - msb as usize;
                     } else {
@@ -1093,11 +1093,12 @@ impl<A: AudioController> Emulator<A> {
             },
             0x29 => { // add HL, HL
                 self.f &= 0x80;
-                self.set_c_on_condition((self.h & 0x80) != 0x00);
-                self.set_h_on_condition((self.h & 0x08) != 0x00);
-                if (self.l & 0x80) != 0x00 {
-                    self.h += self.h + 1;
-                    self.l += self.l;
+                self.set_c_on_condition((self.h.0 & 0x80) != 0x00);
+                self.set_h_on_condition((self.h.0 & 0x08) != 0x00);
+                if (self.l.0 & 0x80) != 0x00 {
+                    self.h *= 2;
+                    self.l *= 2;
+                    self.h += 1;
                 } else {
                     self.h *= 2;
                     self.l *= 2;
@@ -1108,14 +1109,14 @@ impl<A: AudioController> Emulator<A> {
             0x2a => { // ldi A, (HL)
                 self.a = self.read_byte_hl();
                 self.l += 1;
-                if self.l == 0x00 {
+                if self.l.0 == 0x00 {
                     self.h += 1;
                 }
                 self.pc += 1;
                 8
             },
             0x2b => { // dec HL
-                if self.l == 0x00 {
+                if self.l.0 == 0x00 {
                     self.h -= 1;
                 }
                 self.l -= 1;
@@ -1125,22 +1126,22 @@ impl<A: AudioController> Emulator<A> {
             0x2c => { // inc L
                 self.f &= 0x10;
                 self.l += 0x01;
-                self.set_z_on_zero(self.l);
-                self.set_h_on_zero(self.l & 0x0f);
+                self.set_z_on_zero(self.l.0);
+                self.set_h_on_zero(self.l.0 & 0x0f);
                 self.pc += 1;
                 4
             },
             0x2d => { // dec L
                 self.f &= 0x10;
                 self.f |= 0x40;
-                self.set_h_on_zero(self.l & 0x0f);
+                self.set_h_on_zero(self.l.0 & 0x0f);
                 self.l -= 0x01;
-                self.set_z_on_zero(self.l);
+                self.set_z_on_zero(self.l.0);
                 self.pc += 1;
                 4
             },
             0x2e => { // ld L, n
-                self.l = self.read_address(self.pc + 1);
+                self.l = self.read_address(self.pc + Wrapping(1));
                 self.pc += 2;
                 8
             },
@@ -1151,11 +1152,11 @@ impl<A: AudioController> Emulator<A> {
                 4
             },
             0x30 => { // jr NC, d
-                if (self.f & 0x10) != 0x00 {
+                if (self.f.0 & 0x10) != 0x00 {
                     self.pc += 2;
                     8
                 } else {
-                    let msb = self.read_address(self.pc + 1);
+                    let msb = self.read_address(self.pc + Wrapping(1)).0;
                     if msb >= 0x80 {
                         self.pc -= 256 - msb as usize;
                     } else {
@@ -1166,13 +1167,13 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             0x31 => { // ld SP, nn
-                self.sp = ((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize;
+                self.sp.0 = ((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize;
                 self.pc += 3;
                 12
             },
             0x32 => { // ldd (HL), A
                 self.write_byte_hl(self.a);
-                if self.l == 0x00 {
+                if self.l.0 == 0x00 {
                     self.h -= 1;
                 }
                 self.l -= 1;
@@ -1188,9 +1189,9 @@ impl<A: AudioController> Emulator<A> {
             0x34 => { // inc (HL)
                 self.f &= 0x10;
                 let temp_addr = self.get_address_hl();
-                let temp_byte = self.read_address(temp_addr) + 1;
-                self.set_z_on_zero(temp_byte);
-                self.set_h_on_zero(temp_byte & 0x0f);
+                let temp_byte = self.read_address(temp_addr) + Wrapping(1);
+                self.set_z_on_zero(temp_byte.0);
+                self.set_h_on_zero(temp_byte.0 & 0x0f);
                 self.write_address(temp_addr, temp_byte);
                 self.pc += 1;
                 12
@@ -1200,15 +1201,15 @@ impl<A: AudioController> Emulator<A> {
                 self.f |= 0x40;
                 let temp_addr = self.get_address_hl();
                 let mut temp_byte = self.read_address(temp_addr);
-                self.set_h_on_zero(temp_byte & 0x0f);
+                self.set_h_on_zero(temp_byte.0 & 0x0f);
                 temp_byte -= 1;
-                self.set_z_on_zero(temp_byte);
+                self.set_z_on_zero(temp_byte.0);
                 self.write_address(temp_addr, temp_byte);
                 self.pc += 1;
                 12
             },
             0x36 => { // ld (HL), n
-                self.write_byte_hl(self.read_address(self.pc + 1));
+                self.write_byte_hl(self.read_address(self.pc + Wrapping(1)));
                 self.pc += 2;
                 12
             },
@@ -1219,8 +1220,8 @@ impl<A: AudioController> Emulator<A> {
                 4
             },
             0x38 => { // jr C, n
-                if (self.f & 0x10) != 0x00 {
-                    let msb = self.read_address(self.pc + 1);
+                if (self.f.0 & 0x10) != 0x00 {
+                    let msb = self.read_address(self.pc + Wrapping(1)).0;
                     if msb >= 0x80 {
                         self.pc -= 256 - msb as usize;
                     } else {
@@ -1235,22 +1236,22 @@ impl<A: AudioController> Emulator<A> {
             },
             0x39 => { // add HL, SP
                 self.f &= 0x80;
-                let mut temp_byte = (self.sp & 0xff) as u8;
+                let mut temp_byte = (self.sp.0 & 0x00ff) as u8;
                 self.l += temp_byte;
-                if self.l < temp_byte {
+                if self.l.0 < temp_byte {
                     self.h += 1;
                 }
-                temp_byte = (self.sp >> 8) as u8;
+                temp_byte = (self.sp.0 >> 8) as u8;
                 self.h += temp_byte;
-                self.set_c_on_condition(self.h < temp_byte);
+                self.set_c_on_condition(self.h.0 < temp_byte);
                 temp_byte = temp_byte & 0x0f;
-                self.set_h_on_condition((self.h & 0x0f) < temp_byte);
+                self.set_h_on_condition((self.h.0 & 0x0f) < temp_byte);
                 self.pc += 1;
                 8
             },
             0x3a => { // ldd A, (HL)
                 self.a = self.read_byte_hl();
-                if self.l == 0x00 {
+                if self.l.0 == 0x00 {
                     self.h -= 1;
                 }
                 self.l -= 1;
@@ -1266,28 +1267,28 @@ impl<A: AudioController> Emulator<A> {
             0x3c => { // inc A
                 self.a += 1;
                 self.f &= 0x10;
-                self.set_z_on_zero(self.a);
-                self.set_h_on_zero(self.a & 0x0f);
+                self.set_z_on_zero(self.a.0);
+                self.set_h_on_zero(self.a.0 & 0x0f);
                 self.pc += 1;
                 4
             },
             0x3d => { // dec A
                 self.f &= 0x10;
                 self.f |= 0x40;
-                self.set_h_on_zero(self.a & 0x0f);
+                self.set_h_on_zero(self.a.0 & 0x0f);
                 self.a -= 0x01;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x3e => { // ld A, n
-                self.a = self.read_address(self.pc + 1);
+                self.a = self.read_address(self.pc + Wrapping(1));
                 self.pc += 2;
                 8
             },
             0x3f => { // ccf (invert carry flags)
                 self.f &= 0xb0;
-                let mut temp_byte = self.f & 0x30;
+                let mut temp_byte = self.f.0 & 0x30;
                 temp_byte = temp_byte ^ 0x30;
                 self.f &= 0x80;
                 self.f |= temp_byte;
@@ -1609,54 +1610,54 @@ impl<A: AudioController> Emulator<A> {
             },
             0x80 => { // add B (add B to A)
                 self.a += self.b;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_h_on_condition((self.b & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_h_on_condition((self.b.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.b > self.a);
                 self.pc += 1;
                 4
             },
             0x81 => { // add C
                 self.a += self.c;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_h_on_condition((self.c & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_h_on_condition((self.c.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.c > self.a);
                 self.pc += 1;
                 4
             },
             0x82 => { // add D
                 self.a += self.d;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_h_on_condition((self.d & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_h_on_condition((self.d.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.d > self.a);
                 self.pc += 1;
                 4
             },
             0x83 => { // add E
                 self.a += self.e;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_h_on_condition((self.e & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_h_on_condition((self.e.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.e > self.a);
                 self.pc += 1;
                 4
             },
             0x84 => { // add H
                 self.a += self.h;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_h_on_condition((self.h & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_h_on_condition((self.h.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.h > self.a);
                 self.pc += 1;
                 4
             },
             0x85 => { // add L
                 self.a += self.l;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_h_on_condition((self.l & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_h_on_condition((self.l.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.l > self.a);
                 self.pc += 1;
                 4
@@ -1664,585 +1665,585 @@ impl<A: AudioController> Emulator<A> {
             0x86 => { // add (HL)
                 let temp_byte = self.read_byte_hl();
                 self.a += temp_byte;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_c_on_condition(temp_byte > self.a);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_c_on_condition(temp_byte.0 > self.a.0);
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 8
             },
             0x87 => { // add A
-                self.f = 0x00;
-                self.set_h_on_condition((self.a & 0x08) != 0x00);
-                self.set_c_on_condition((self.a & 0x80) != 0x00);
+                self.f.0 = 0x00;
+                self.set_h_on_condition((self.a.0 & 0x08) != 0x00);
+                self.set_c_on_condition((self.a.0 & 0x80) != 0x00);
                 self.a += self.a;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x88 => { // adc A, B (add B + carry to A)
                 let mut temp_byte = self.b;
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 4
             },
             0x89 => { // adc A, C
                 let mut temp_byte = self.c;
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 4
             },
             0x8a => { // adc A, D
                 let mut temp_byte = self.d;
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 4
             },
             0x8b => { // adc A, E
                 let mut temp_byte = self.e;
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 4
             },
             0x8c => { // adc A, H
                 let mut temp_byte = self.h;
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 4
             },
             0x8d => { // adc A, L
                 let mut temp_byte = self.l;
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 4
             },
             0x8e => { // adc A, (HL)
                 let mut temp_byte = self.read_byte_hl();
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 8
             },
             0x8f => { // adc A, A
                 let mut temp_byte = self.a;
-                if (self.f & 0x10) != 0x00 {
-                    self.f = 0x00;
-                    self.set_c_on_condition(temp_byte == 0xff);
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.f.0 = 0x00;
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 } else {
-                    self.f = 0x00;
+                    self.f.0 = 0x00;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 4
             },
             0x90 => { // sub B (sub B from A)
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.b > self.a);
-                self.set_h_on_condition((self.b & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.b.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.b;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 1;
                 4
             },
             0x91 => { // sub C
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.c > self.a);
-                self.set_h_on_condition((self.c & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.c.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.c;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 1;
                 4
             },
             0x92 => { // sub D
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.d > self.a);
-                self.set_h_on_condition((self.d & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.d.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.d;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 1;
                 4
             },
             0x93 => { // sub E
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.e > self.a);
-                self.set_h_on_condition((self.e & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.e.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.e;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 1;
                 4
             },
             0x94 => { // sub H
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.h > self.a);
-                self.set_h_on_condition((self.h & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.h.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.h;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 1;
                 4
             },
             0x95 => { // sub L
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.l > self.a);
-                self.set_h_on_condition((self.l & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.l.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.l;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 1;
                 4
             },
             0x96 => { // sub (HL)
                 let temp_byte = self.read_byte_hl();
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(temp_byte > self.a);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= temp_byte;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 1;
                 8
             },
             0x97 => { // sub A
-                self.f = 0xc0;
-                self.a = 0x00;
+                self.f.0 = 0xc0;
+                self.a.0 = 0x00;
                 self.pc += 1;
                 4
             },
             0x98 => { // sbc A, B (A = A - (B+carry))
-                let temp_byte = self.f & 0x10;
-                self.f = 0x40;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.b > self.a);
-                self.set_h_on_condition((self.b & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.b.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.b;
-                if temp_byte != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x99 => { // sbc A, C
-                let temp_byte = self.f & 0x10;
-                self.f = 0x40;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.c > self.a);
-                self.set_h_on_condition((self.c & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.c.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.c;
-                if temp_byte != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x9a => { // sbc A, D
-                let temp_byte = self.f & 0x10;
-                self.f = 0x40;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.d > self.a);
-                self.set_h_on_condition((self.d & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.d.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.d;
-                if temp_byte != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x9b => { // sbc A, E
-                let temp_byte = self.f & 0x10;
-                self.f = 0x40;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.e > self.a);
-                self.set_h_on_condition((self.e & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.e.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.e;
-                if temp_byte != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x9c => { // sbc A, H
-                let temp_byte = self.f & 0x10;
-                self.f = 0x40;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.h > self.a);
-                self.set_h_on_condition((self.h & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.h.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.h;
-                if temp_byte != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x9d => { // sbc A, L
-                let temp_byte = self.f & 0x10;
-                self.f = 0x40;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(self.l > self.a);
-                self.set_h_on_condition((self.l & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((self.l.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= self.l;
-                if temp_byte != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0x9e => { // sbc A, (HL)
                 let temp_byte = self.read_byte_hl();
-                let temp_byte_2 = self.f & 0x10;
-                self.f = 0x40;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(temp_byte > self.a);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= temp_byte;
-                if temp_byte_2 != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 8
             },
             0x9f => { // sbc A, A
-                let temp_byte = self.f & 0x10;
-                self.f = 0x40;
-                self.a = 0;
-                if temp_byte != 0x00 {
-                    if self.a == 0 {
-                        self.a = 0xff;
-                        self.f = 0x70;
+                let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                self.f.0 = 0x40;
+                self.a.0 = 0;
+                if carry_was_set {
+                    if self.a.0 == 0 {
+                        self.a.0 = 0xff;
+                        self.f.0 = 0x70;
                     } else {
                         self.a -= 1;
                     }
                 }
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa0 => { // and B (and B against A)
                 self.a = self.a & self.b;
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa1 => { // and C
                 self.a = self.a & self.c;
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa2 => { // and D
                 self.a = self.a & self.d;
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa3 => { // and E
                 self.a = self.a & self.e;
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa4 => { // and H
                 self.a = self.a & self.h;
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa5 => { // and L
                 self.a = self.a & self.l;
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa6 => { // and (HL)
                 self.a = self.a & self.read_byte_hl();
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 8
             },
             0xa7 => { // and A
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa8 => { // xor B (A = A XOR B)
                 self.a = self.a ^ self.b;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xa9 => { // xor C
                 self.a = self.a ^ self.c;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xaa => { // xor D
                 self.a = self.a ^ self.d;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xab => { // xor E
                 self.a = self.a ^ self.e;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xac => { // xor H
                 self.a = self.a ^ self.h;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xad => { // xor L
                 self.a = self.a ^ self.l;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xae => { // xor (HL)
                 self.a = self.a ^ self.read_byte_hl();
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 8
             },
             0xaf => { // xor A
-                self.a = 0x00;
-                self.f = 0x80;
+                self.a.0 = 0x00;
+                self.f.0 = 0x80;
                 self.pc += 1;
                 4
             },
             0xb0 => { // or B (or B against A)
                 self.a = self.a | self.b;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xb1 => { // or C
                 self.a = self.a | self.c;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xb2 => { // or D
                 self.a = self.a | self.d;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xb3 => { // or E
                 self.a = self.a | self.e;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xb4 => { // or H
                 self.a = self.a | self.h;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xb5 => { // or L
                 self.a = self.a | self.l;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xb6 => { // or (HL)
                 self.a = self.a | self.read_byte_hl();
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 8
             },
             0xb7 => { // or A
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 1;
                 4
             },
             0xb8 => { // cp B
-                self.f = 0x40;
-                self.set_h_on_condition((self.b & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x40;
+                self.set_h_on_condition((self.b.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.b > self.a);
                 self.set_z_on_condition(self.a == self.b);
                 self.pc += 1;
                 4
             },
             0xb9 => { // cp C
-                self.f = 0x40;
-                self.set_h_on_condition((self.c & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x40;
+                self.set_h_on_condition((self.c.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.c > self.a);
                 self.set_z_on_condition(self.a == self.c);
                 self.pc += 1;
                 4
             },
             0xba => { // cp D
-                self.f = 0x40;
-                self.set_h_on_condition((self.d & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x40;
+                self.set_h_on_condition((self.d.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.d > self.a);
                 self.set_z_on_condition(self.a == self.d);
                 self.pc += 1;
                 4
             },
             0xbb => { // cp E
-                self.f = 0x40;
-                self.set_h_on_condition((self.e & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x40;
+                self.set_h_on_condition((self.e.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.e > self.a);
                 self.set_z_on_condition(self.a == self.e);
                 self.pc += 1;
                 4
             },
             0xbc => { // cp H
-                self.f = 0x40;
-                self.set_h_on_condition((self.h & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x40;
+                self.set_h_on_condition((self.h.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.h > self.a);
                 self.set_z_on_condition(self.a == self.h);
                 self.pc += 1;
                 4
             },
             0xbd => { // cp L
-                self.f = 0x40;
-                self.set_h_on_condition((self.l & 0x0f) > (self.a & 0x0f));
+                self.f.0 = 0x40;
+                self.set_h_on_condition((self.l.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(self.l > self.a);
                 self.set_z_on_condition(self.a == self.l);
                 self.pc += 1;
@@ -2250,26 +2251,26 @@ impl<A: AudioController> Emulator<A> {
             },
             0xbe => { // cp (HL)
                 let temp_byte = self.read_byte_hl();
-                self.f = 0x40;
+                self.f.0 = 0x40;
                 self.set_c_on_condition(temp_byte > self.a);
                 self.set_z_on_condition(self.a == temp_byte);
-                self.set_h_on_condition((temp_byte & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((temp_byte.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.pc += 1;
                 8
             },
             0xbf => { // cp A
-                self.f = 0xc0;
+                self.f.0 = 0xc0;
                 self.pc += 1;
                 4
             },
             0xc0 => { // ret NZ
-                if (self.f & 0x80) != 0x00 {
+                if (self.f.0 & 0x80) != 0x00 {
                     self.pc += 1;
                     8
                 } else {
                     let (msb, lsb) = self.read_address_16(self.sp);
                     self.sp += 2;
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     20
                 }
             },
@@ -2282,29 +2283,29 @@ impl<A: AudioController> Emulator<A> {
                 12
             },
             0xc2 => { // j NZ, nn
-                if (self.f & 0x80) != 0x00 {
+                if (self.f.0 & 0x80) != 0x00 {
                     self.pc += 3;
                     12
                 } else {
-                    self.pc = ((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize;
+                    self.pc.0 = ((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize;
                     16
                 }
             },
             0xc3 => { // jump to nn
-                self.pc = ((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize;
+                self.pc.0 = ((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize;
                 16
             },
             0xc4 => { // call NZ, nn
-                if (self.f & 0x80) != 0x00 {
+                if (self.f.0 & 0x80) != 0x00 {
                     self.pc += 3;
                     12
                 } else {
-                    let msb = self.read_address(self.pc + 1);
-                    let lsb = self.read_address(self.pc + 2);
+                    let msb = self.read_address(self.pc + Wrapping(1));
+                    let lsb = self.read_address(self.pc + Wrapping(2));
                     self.pc += 3;
                     self.sp -= 2;
-                    self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0xff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     24
                 }
             },
@@ -2315,27 +2316,27 @@ impl<A: AudioController> Emulator<A> {
                 16
             },
             0xc6 => { // add A, n
-                let msb = self.read_address(self.pc + 1);
+                let msb = self.read_address(self.pc + Wrapping(1));
                 self.a += msb;
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
-                self.set_c_on_condition(self.a < msb);
-                self.set_h_on_condition((self.a & 0x0f) < (msb & 0x0f));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
+                self.set_c_on_condition(self.a.0 < msb.0);
+                self.set_h_on_condition((self.a.0 & 0x0f) < (msb.0 & 0x0f));
                 self.pc += 2;
                 8
             },
             0xc7 => { // rst 0 (call routine at 0x0000)
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x00;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x00;
                 16
             },
             0xc8 => { // ret Z
-                if (self.f & 0x80) != 0x00 {
+                if (self.f.0 & 0x80) != 0x00 {
                     let (msb, lsb) = self.read_address_16(self.sp);
                     self.sp += 2;
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     20
                 } else {
                     self.pc += 1;
@@ -2345,12 +2346,12 @@ impl<A: AudioController> Emulator<A> {
             0xc9 => { // return
                 let (msb, lsb) = self.read_address_16(self.sp);
                 self.sp += 2;
-                self.pc = ((lsb as usize) << 8) + msb as usize;
+                self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                 16
             },
             0xca => { // j Z, nn
-                if (self.f & 0x80) != 0x00 {
-                    self.pc = ((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize;
+                if (self.f.0 & 0x80) != 0x00 {
+                    self.pc.0 = ((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize;
                     16
                 } else {
                     self.pc += 3;
@@ -2359,1054 +2360,1054 @@ impl<A: AudioController> Emulator<A> {
             },
             0xcb => { // extended instructions
                 self.pc += 2;
-                let next_address_byte = self.read_address(self.pc - 1);
+                let next_address_byte = self.read_address(self.pc - Wrapping(1)).0;
                 match next_address_byte {
                     0x00 => { // rlc B
-                        let temp_byte = self.b & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
+                        let bit_7_was_set = (self.b.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
                         self.b = self.b << 1;
-                        if temp_byte != 0 {
+                        if bit_7_was_set {
                             self.b |= 0x01;
-                            self.f = 0x10; // Set carry
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(self.b);
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x01 => { // rlc C
-                        let temp_byte = self.c & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
+                        let bit_7_was_set = (self.c.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
                         self.c = self.c << 1;
-                        if temp_byte != 0 {
+                        if bit_7_was_set {
                             self.c |= 0x01;
-                            self.f = 0x10; // Set carry
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(self.c);
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x02 => { // rlc D
-                        let temp_byte = self.d & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
+                        let bit_7_was_set = (self.d.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
                         self.d = self.d << 1;
-                        if temp_byte != 0 {
+                        if bit_7_was_set {
                             self.d |= 0x01;
-                            self.f = 0x10; // Set carry
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(self.d);
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x03 => { // rlc E
-                        let temp_byte = self.e & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
+                        let bit_7_was_set = (self.e.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
                         self.e = self.e << 1;
-                        if temp_byte != 0 {
+                        if bit_7_was_set {
                             self.e |= 0x01;
-                            self.f = 0x10; // Set carry
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(self.e);
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x04 => { // rlc H
-                        let temp_byte = self.h & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
+                        let bit_7_was_set = (self.h.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
                         self.h = self.h << 1;
-                        if temp_byte != 0 {
+                        if bit_7_was_set {
                             self.h |= 0x01;
-                            self.f = 0x10; // Set carry
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(self.h);
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x05 => { // rlc L
-                        let temp_byte = self.l & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
+                        let bit_7_was_set = (self.l.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
                         self.l = self.l << 1;
-                        if temp_byte != 0 {
+                        if bit_7_was_set {
                             self.l |= 0x01;
-                            self.f = 0x10; // Set carry
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(self.l);
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x06 => { // rlc (HL)
                         let temp_addr = self.get_address_hl();
-                        let mut temp_byte_2 = self.read_address(temp_addr);
-                        let temp_byte = temp_byte_2 & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
-                        temp_byte_2 = temp_byte_2 << 1;
-                        if temp_byte != 0 {
-                            temp_byte_2 |= 0x01;
-                            self.f = 0x10; // Set carry
+                        let mut temp_byte = self.read_address(temp_addr);
+                        let bit_7_was_set = (temp_byte.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
+                        temp_byte = temp_byte << 1;
+                        if bit_7_was_set {
+                            temp_byte |= 0x01;
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(temp_byte_2);
-                        self.write_address(temp_addr, temp_byte_2);
+                        self.set_z_on_zero(temp_byte.0);
+                        self.write_address(temp_addr, temp_byte);
                         16
                     },
                     0x07 => { // rlc A
-                        let temp_byte = self.a & 0x80; // True if bit 7 is set
-                        self.f = 0x00; // Reset all other flags
+                        let bit_7_was_set = (self.a.0 & 0x80) != 0;
+                        self.f.0 = 0x00; // Reset all other flags
                         self.a = self.a << 1;
-                        if temp_byte != 0 {
+                        if bit_7_was_set {
                             self.a |= 0x01;
-                            self.f = 0x10; // Set carry
+                            self.f.0 = 0x10; // Set carry
                         }
-                        self.set_z_on_zero(self.a);
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x08 => { // rrc B
-                        let temp_byte = self.b & 0x01;
-                        self.f = 0x00;
-                        self.b = self.b >> 1;
+                        let bit_0_was_set = (self.b.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        self.b >>= 1;
                         self.b &= 0x7f;
-                        if temp_byte != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             self.b |= 0x80;
                         }
-                        self.set_z_on_zero(self.b);
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x09 => { // rrc C
-                        let temp_byte = self.c & 0x01;
-                        self.f = 0x00;
-                        self.c = self.c >> 1;
+                        let bit_0_was_set = (self.c.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        self.c >>= 1;
                         self.c &= 0x7f;
-                        if temp_byte != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             self.c |= 0x80;
                         }
-                        self.set_z_on_zero(self.c);
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x0a => { // rrc D
-                        let temp_byte = self.d & 0x01;
-                        self.f = 0x00;
-                        self.d = self.d >> 1;
+                        let bit_0_was_set = (self.d.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        self.d >>= 1;
                         self.d &= 0x7f;
-                        if temp_byte != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             self.d |= 0x80;
                         }
-                        self.set_z_on_zero(self.d);
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x0b => { // rrc E
-                        let temp_byte = self.e & 0x01;
-                        self.f = 0x00;
-                        self.e = self.e >> 1;
+                        let bit_0_was_set = (self.e.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        self.e >>= 1;
                         self.e &= 0x7f;
-                        if temp_byte != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             self.e |= 0x80;
                         }
-                        self.set_z_on_zero(self.e);
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x0c => { // rrc H
-                        let temp_byte = self.h & 0x01;
-                        self.f = 0x00;
-                        self.h = self.h >> 1;
+                        let bit_0_was_set = (self.h.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        self.h >>= 1;
                         self.h &= 0x7f;
-                        if temp_byte != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             self.h |= 0x80;
                         }
-                        self.set_z_on_zero(self.h);
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x0d => { // rrc L
-                        let temp_byte = self.l & 0x01;
-                        self.f = 0x00;
-                        self.l = self.l >> 1;
+                        let bit_0_was_set = (self.l.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        self.l >>= 1;
                         self.l &= 0x7f;
-                        if temp_byte != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             self.l |= 0x80;
                         }
-                        self.set_z_on_zero(self.l);
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x0e => { // rrc (HL)
                         let temp_addr = self.get_address_hl();
                         let mut temp_byte = self.read_address(temp_addr);
-                        let temp_byte_2 = temp_byte & 0x01;
-                        self.f = 0x00;
-                        temp_byte = temp_byte >> 1;
+                        let bit_0_was_set = (temp_byte.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        temp_byte >>= 1;
                         temp_byte &= 0x7f;
-                        if temp_byte_2 != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             temp_byte |= 0x80;
                         }
-                        self.set_z_on_zero(temp_byte);
+                        self.set_z_on_zero(temp_byte.0);
                         self.write_address(temp_addr, temp_byte);
                         16
                     },
                     0x0f => { // rrc A
-                        let temp_byte = self.a & 0x01;
-                        self.f = 0x00;
-                        self.a = self.a >> 1;
+                        let bit_0_was_set = (self.a.0 & 0x01) != 0;
+                        self.f.0 = 0x00;
+                        self.a >>= 1;
                         self.a &= 0x7f;
-                        if temp_byte != 0 {
-                            self.f = 0x10;
+                        if bit_0_was_set {
+                            self.f.0 = 0x10;
                             self.a |= 0x80;
                         }
-                        self.set_z_on_zero(self.a);
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x10 => { // rl B (rotate carry bit to bit 0 of B)
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.b & 0x80) != 0); // Copy bit 7 to carry bit
-                        self.b = self.b << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.b.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        self.b <<= 1;
+                        if carry_was_set {
                             self.b |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(self.b);
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x11 => { // rl C
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.c & 0x80) != 0); // Copy bit 7 to carry bit
-                        self.c = self.c << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.c.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        self.c <<= 1;
+                        if carry_was_set {
                             self.c |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(self.c);
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x12 => { // rl D
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.d & 0x80) != 0); // Copy bit 7 to carry bit
-                        self.d = self.d << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.d.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        self.d <<= 1;
+                        if carry_was_set {
                             self.d |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(self.d);
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x13 => { // rl E
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.e & 0x80) != 0); // Copy bit 7 to carry bit
-                        self.e = self.e << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.e.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        self.e <<= 1;
+                        if carry_was_set {
                             self.e |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(self.e);
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x14 => { // rl H
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.h & 0x80) != 0); // Copy bit 7 to carry bit
-                        self.h = self.h << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.h.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        self.h <<= 1;
+                        if carry_was_set {
                             self.h |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(self.h);
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x15 => { // rl L
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.l & 0x80) != 0); // Copy bit 7 to carry bit
-                        self.l = self.l << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.l.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        self.l <<= 1;
+                        if carry_was_set {
                             self.l |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(self.l);
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x16 => { // rl (HL)
                         let temp_addr = self.get_address_hl();
                         let mut temp_byte_2 = self.read_address(temp_addr);
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((temp_byte_2 & 0x80) != 0); // Copy bit 7 to carry bit
-                        temp_byte_2 = temp_byte_2 << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((temp_byte_2.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        temp_byte_2 <<= 1;
+                        if carry_was_set {
                             temp_byte_2 |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(temp_byte_2);
+                        self.set_z_on_zero(temp_byte_2.0);
                         self.write_address(temp_addr, temp_byte_2);
                         16
                     },
                     0x17 => { // rl A
-                        let temp_byte = self.f & 0x10; // True if carry flag was set
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.a & 0x80) != 0); // Copy bit 7 to carry bit
-                        self.a = self.a << 1;
-                        if temp_byte != 0 {
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.a.0 & 0x80) != 0); // Copy bit 7 to carry bit
+                        self.a <<= 1;
+                        if carry_was_set {
                             self.a |= 0x01; // Copy carry flag to bit 0
                         }
-                        self.set_z_on_zero(self.a);
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x18 => { // rr B (9-bit rotation incl carry bit)
-                        let temp_byte = self.b & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        self.b = self.b >> 1;
-                        self.b = self.b & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (self.b.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.b >>= 1;
+                        self.b &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             self.b |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_zero(self.b);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x19 => { // rr C
-                        let temp_byte = self.c & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        self.c = self.c >> 1;
-                        self.c = self.c & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (self.c.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.c >>= 1;
+                        self.c &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             self.c |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_zero(self.c);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x1a => { // rr D
-                        let temp_byte = self.d & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        self.d = self.d >> 1;
-                        self.d = self.d & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (self.d.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.d >>= 1;
+                        self.d &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             self.d |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_zero(self.d);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x1b => { // rr E
-                        let temp_byte = self.e & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        self.e = self.e >> 1;
-                        self.e = self.e & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (self.e.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.e >>= 1;
+                        self.e &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             self.e |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_zero(self.e);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x1c => { // rr H
-                        let temp_byte = self.h & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        self.h = self.h >> 1;
-                        self.h = self.h & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (self.h.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.h >>= 1;
+                        self.h &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             self.h |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_zero(self.h);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x1d => { // rr L
-                        let temp_byte = self.l & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        self.l = self.l >> 1;
-                        self.l = self.l & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (self.l.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.l >>= 1;
+                        self.l &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             self.l |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_zero(self.l);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x1e => { // rr (HL)
                         let temp_addr = self.get_address_hl();
                         let mut temp_byte_3 = self.read_address(temp_addr);
-                        let temp_byte = temp_byte_3 & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        temp_byte_3 = temp_byte_3 >> 1;
-                        temp_byte_3 = temp_byte_3 & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (temp_byte_3.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        temp_byte_3 >>= 1;
+                        temp_byte_3 &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             temp_byte_3 |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_condition(temp_byte_3 == 0x00);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_condition(temp_byte_3.0 == 0x00);
                         self.write_address(temp_addr, temp_byte_3);
                         16
                     },
                     0x1f => { // rr A
-                        let temp_byte = self.a & 0x01;
-                        let temp_byte_2 = self.f & 0x10;
-                        self.a = self.a >> 1;
-                        self.a = self.a & 0x7f;
-                        self.f = 0x00;
-                        if temp_byte_2 != 0x00 {
+                        let bit_0_was_set = (self.a.0 & 0x01) != 0;
+                        let carry_was_set = (self.f.0 & 0x10) != 0x00;
+                        self.a >>= 1;
+                        self.a &= 0x7f;
+                        self.f.0 = 0x00;
+                        if carry_was_set {
                             self.a |= 0x80;
                         }
-                        self.set_c_on_condition(temp_byte != 0x00);
-                        self.set_z_on_zero(self.a);
+                        self.set_c_on_condition(bit_0_was_set);
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x20 => { // sla B (shift B left arithmetically)
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.b & 0x80) != 0x00);
-                        self.b = self.b << 1;
-                        self.set_z_on_zero(self.b);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.b.0 & 0x80) != 0x00);
+                        self.b <<= 1;
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x21 => { // sla C
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.c & 0x80) != 0x00);
-                        self.c = self.c << 1;
-                        self.set_z_on_zero(self.c);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.c.0 & 0x80) != 0x00);
+                        self.c <<= 1;
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x22 => { // sla D
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.d & 0x80) != 0x00);
-                        self.d = self.d << 1;
-                        self.set_z_on_zero(self.d);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.d.0 & 0x80) != 0x00);
+                        self.d <<= 1;
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x23 => { // sla E
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.e & 0x80) != 0x00);
-                        self.e = self.e << 1;
-                        self.set_z_on_zero(self.e);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.e.0 & 0x80) != 0x00);
+                        self.e <<= 1;
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x24 => { // sla H
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.h & 0x80) != 0x00);
-                        self.h = self.h << 1;
-                        self.set_z_on_zero(self.h);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.h.0 & 0x80) != 0x00);
+                        self.h <<= 1;
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x25 => { // sla L
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.l & 0x80) != 0x00);
-                        self.l = self.l << 1;
-                        self.set_z_on_zero(self.l);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.l.0 & 0x80) != 0x00);
+                        self.l <<= 1;
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x26 => { // sla (HL)
                         let temp_addr = self.get_address_hl();
                         let mut temp_byte = self.read_address(temp_addr);
-                        self.f = 0x00;
-                        self.set_c_on_condition((temp_byte & 0x80) != 0x00);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((temp_byte.0 & 0x80) != 0x00);
                         temp_byte = temp_byte << 1;
-                        self.set_z_on_zero(temp_byte);
+                        self.set_z_on_zero(temp_byte.0);
                         self.write_address(temp_addr, temp_byte);
                         16
                     },
                     0x27 => { // sla A
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.a & 0x80) != 0x00);
-                        self.a = self.a << 1;
-                        self.set_z_on_zero(self.a);
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.a.0 & 0x80) != 0x00);
+                        self.a <<= 1;
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x28 => { // sra B (shift B right arithmetically - preserve sign bit)
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.b & 0x01) != 0x00);
-                        let temp_byte = self.b & 0x80;
-                        self.b = self.b >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.b.0 & 0x01) != 0x00);
+                        let temp_byte = self.b & Wrapping(0x80);
+                        self.b >>= 1;
                         self.b |= temp_byte;
-                        self.set_z_on_zero(self.b);
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x29 => { // sra C
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.c & 0x01) != 0x00);
-                        let temp_byte = self.c & 0x80;
-                        self.c = self.c >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.c.0 & 0x01) != 0x00);
+                        let temp_byte = self.c & Wrapping(0x80);
+                        self.c >>= 1;
                         self.c |= temp_byte;
-                        self.set_z_on_zero(self.c);
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x2a => { // sra D
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.d & 0x01) != 0x00);
-                        let temp_byte = self.d & 0x80;
-                        self.d = self.d >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.d.0 & 0x01) != 0x00);
+                        let temp_byte = self.d & Wrapping(0x80);
+                        self.d >>= 1;
                         self.d |= temp_byte;
-                        self.set_z_on_zero(self.d);
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x2b => { // sra E
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.e & 0x01) != 0x00);
-                        let temp_byte = self.e & 0x80;
-                        self.e = self.e >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.e.0 & 0x01) != 0x00);
+                        let temp_byte = self.e & Wrapping(0x80);
+                        self.e >>= 1;
                         self.e |= temp_byte;
-                        self.set_z_on_zero(self.e);
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x2c => { // sra H
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.h & 0x01) != 0x00);
-                        let temp_byte = self.h & 0x80;
-                        self.h = self.h >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.h.0 & 0x01) != 0x00);
+                        let temp_byte = self.h & Wrapping(0x80);
+                        self.h >>= 1;
                         self.h |= temp_byte;
-                        self.set_z_on_zero(self.h);
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x2d => { // sra L
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.l & 0x01) != 0x00);
-                        let temp_byte = self.l & 0x80;
-                        self.l = self.l >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.l.0 & 0x01) != 0x00);
+                        let temp_byte = self.l & Wrapping(0x80);
+                        self.l >>= 1;
                         self.l |= temp_byte;
-                        self.set_z_on_zero(self.l);
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x2e => { // sra (HL)
-                        self.f = 0x00;
+                        self.f.0 = 0x00;
                         let temp_addr = self.get_address_hl();
                         let mut temp_byte = self.read_address(temp_addr);
-                        self.set_c_on_condition((temp_byte & 0x01) != 0x00);
-                        let temp_byte_2 = temp_byte & 0x80;
-                        temp_byte = temp_byte >> 1;
+                        self.set_c_on_condition((temp_byte.0 & 0x01) != 0x00);
+                        let temp_byte_2 = temp_byte & Wrapping(0x80);
+                        temp_byte >>= 1;
                         temp_byte |= temp_byte_2;
-                        self.set_z_on_zero(temp_byte);
+                        self.set_z_on_zero(temp_byte.0);
                         self.write_address(temp_addr, temp_byte);
                         16
                     },
                     0x2f => { // sra A
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.a & 0x01) != 0x00);
-                        let temp_byte = self.a & 0x80;
-                        self.a = self.a >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.a.0 & 0x01) != 0x00);
+                        let temp_byte = self.a & Wrapping(0x80);
+                        self.a >>= 1;
                         self.a |= temp_byte;
-                        self.set_z_on_zero(self.a);
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x30 => { // swap B
                         let temp_byte = self.b << 4;
-                        self.b = self.b >> 4;
+                        self.b >>= 4;
                         self.b &= 0x0f;
                         self.b |= temp_byte;
-                        self.f = 0x00;
-                        self.set_z_on_zero(self.b);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x31 => { // swap C
                         let temp_byte = self.c << 4;
-                        self.c = self.c >> 4;
+                        self.c >>= 4;
                         self.c &= 0x0f;
                         self.c |= temp_byte;
-                        self.f = 0x00;
-                        self.set_z_on_zero(self.c);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x32 => { // swap D
                         let temp_byte = self.d << 4;
-                        self.d = self.d >> 4;
+                        self.d >>= 4;
                         self.d &= 0x0f;
                         self.d |= temp_byte;
-                        self.f = 0x00;
-                        self.set_z_on_zero(self.d);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x33 => { // swap E
                         let temp_byte = self.e << 4;
-                        self.e = self.e >> 4;
+                        self.e >>= 4;
                         self.e &= 0x0f;
                         self.e |= temp_byte;
-                        self.f = 0x00;
-                        self.set_z_on_zero(self.e);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x34 => { // swap H
                         let temp_byte = self.h << 4;
-                        self.h = self.h >> 4;
+                        self.h >>= 4;
                         self.h &= 0x0f;
                         self.h |= temp_byte;
-                        self.f = 0x00;
-                        self.set_z_on_zero(self.h);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x35 => { // swap L
                         let temp_byte = self.l << 4;
-                        self.l = self.l >> 4;
+                        self.l >>= 4;
                         self.l &= 0x0f;
                         self.l |= temp_byte;
-                        self.f = 0x00;
-                        self.set_z_on_zero(self.l);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x36 => { // swap (HL)
                         let temp_addr = self.get_address_hl();
                         let mut temp_byte = self.read_address(temp_addr);
                         let temp_byte_2 = temp_byte << 4;
-                        temp_byte = temp_byte >> 4;
+                        temp_byte >>= 4;
                         temp_byte &= 0x0f;
                         temp_byte |= temp_byte_2;
-                        self.f = 0x00;
-                        self.set_z_on_zero(temp_byte);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(temp_byte.0);
                         self.write_address(temp_addr, temp_byte);
                         16
                     },
                     0x37 => { // swap A
                         let temp_byte = self.a << 4;
-                        self.a = self.a >> 4;
+                        self.a >>= 4;
                         self.a &= 0x0f;
                         self.a |= temp_byte;
-                        self.f = 0x00;
-                        self.set_z_on_zero(self.a);
+                        self.f.0 = 0x00;
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x38 => { // srl B
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.b & 0x01) != 0x00);
-                        self.b = self.b >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.b.0 & 0x01) != 0x00);
+                        self.b >>= 1;
                         self.b &= 0x7f;
-                        self.set_z_on_zero(self.b);
+                        self.set_z_on_zero(self.b.0);
                         8
                     },
                     0x39 => { // srl C
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.c & 0x01) != 0x00);
-                        self.c = self.c >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.c.0 & 0x01) != 0x00);
+                        self.c >>= 1;
                         self.c &= 0x7f;
-                        self.set_z_on_zero(self.c);
+                        self.set_z_on_zero(self.c.0);
                         8
                     },
                     0x3a => { // srl D
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.d & 0x01) != 0x00);
-                        self.d = self.d >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.d.0 & 0x01) != 0x00);
+                        self.d >>= 1;
                         self.d &= 0x7f;
-                        self.set_z_on_zero(self.d);
+                        self.set_z_on_zero(self.d.0);
                         8
                     },
                     0x3b => { // srl E
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.e & 0x01) != 0x00);
-                        self.e = self.e >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.e.0 & 0x01) != 0x00);
+                        self.e >>= 1;
                         self.e &= 0x7f;
-                        self.set_z_on_zero(self.e);
+                        self.set_z_on_zero(self.e.0);
                         8
                     },
                     0x3c => { // srl H
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.h & 0x01) != 0x00);
-                        self.h = self.h >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.h.0 & 0x01) != 0x00);
+                        self.h >>= 1;
                         self.h &= 0x7f;
-                        self.set_z_on_zero(self.h);
+                        self.set_z_on_zero(self.h.0);
                         8
                     },
                     0x3d => { // srl L
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.l & 0x01) != 0x00);
-                        self.l = self.l >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.l.0 & 0x01) != 0x00);
+                        self.l >>= 1;
                         self.l &= 0x7f;
-                        self.set_z_on_zero(self.l);
+                        self.set_z_on_zero(self.l.0);
                         8
                     },
                     0x3e => { // srl (HL)
                         let temp_addr = self.get_address_hl();
                         let mut temp_byte = self.read_address(temp_addr);
-                        self.f = 0x00;
-                        self.set_c_on_condition((temp_byte & 0x01) != 0x00);
-                        temp_byte = temp_byte >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((temp_byte.0 & 0x01) != 0x00);
+                        temp_byte >>= 1;
                         temp_byte &= 0x7f;
-                        self.set_z_on_zero(temp_byte);
+                        self.set_z_on_zero(temp_byte.0);
                         self.write_address(temp_addr, temp_byte);
                         16
                     },
                     0x3f => { // srl A
-                        self.f = 0x00;
-                        self.set_c_on_condition((self.a & 0x01) != 0x00);
-                        self.a = self.a >> 1;
+                        self.f.0 = 0x00;
+                        self.set_c_on_condition((self.a.0 & 0x01) != 0x00);
+                        self.a >>= 1;
                         self.a &= 0x7f;
-                        self.set_z_on_zero(self.a);
+                        self.set_z_on_zero(self.a.0);
                         8
                     },
                     0x40 => { // Test bit 0 of B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x01);
+                        self.set_z_on_zero(self.b.0 & 0x01);
                         8
                     },
                     0x41 => { // Test bit 0 of C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x01);
+                        self.set_z_on_zero(self.c.0 & 0x01);
                         8
                     },
                     0x42 => { // Test bit 0 of D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x01);
+                        self.set_z_on_zero(self.d.0 & 0x01);
                         8
                     },
                     0x43 => { // Test bit 0 of E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x01);
+                        self.set_z_on_zero(self.e.0 & 0x01);
                         8
                     },
                     0x44 => { // Test bit 0 of H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x01);
+                        self.set_z_on_zero(self.h.0 & 0x01);
                         8
                     },
                     0x45 => { // Test bit 0 of L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x01);
+                        self.set_z_on_zero(self.l.0 & 0x01);
                         8
                     },
                     0x46 => { // Test bit 0 of (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x01);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x01);
                         12
                     },
                     0x47 => { // Test bit 0 of A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x01);
+                        self.set_z_on_zero(self.a.0 & 0x01);
                         8
                     },
                     0x48 => { // bit 1, B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x02);
+                        self.set_z_on_zero(self.b.0 & 0x02);
                         8
                     },
                     0x49 => { // bit 1, C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x02);
+                        self.set_z_on_zero(self.c.0 & 0x02);
                         8
                     },
                     0x4a => { // bit 1, D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x02);
+                        self.set_z_on_zero(self.d.0 & 0x02);
                         8
                     },
                     0x4b => { // bit 1, E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x02);
+                        self.set_z_on_zero(self.e.0 & 0x02);
                         8
                     },
                     0x4c => { // bit 1, H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x02);
+                        self.set_z_on_zero(self.h.0 & 0x02);
                         8
                     },
                     0x4d => { // bit 1, L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x02);
+                        self.set_z_on_zero(self.l.0 & 0x02);
                         8
                     },
                     0x4e => { // bit 1, (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x02);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x02);
                         12
                     },
                     0x4f => { // bit 1, A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x02);
+                        self.set_z_on_zero(self.a.0 & 0x02);
                         8
                     },
                     0x50 => { // bit 2, B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x04);
+                        self.set_z_on_zero(self.b.0 & 0x04);
                         8
                     },
                     0x51 => { // bit 2, C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x04);
+                        self.set_z_on_zero(self.c.0 & 0x04);
                         8
                     },
                     0x52 => { // bit 2, D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x04);
+                        self.set_z_on_zero(self.d.0 & 0x04);
                         8
                     },
                     0x53 => { // bit 2, E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x04);
+                        self.set_z_on_zero(self.e.0 & 0x04);
                         8
                     },
                     0x54 => { // bit 2, H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x04);
+                        self.set_z_on_zero(self.h.0 & 0x04);
                         8
                     },
                     0x55 => { // bit 2, L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x04);
+                        self.set_z_on_zero(self.l.0 & 0x04);
                         8
                     },
                     0x56 => { // bit 2, (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x04);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x04);
                         12
                     },
                     0x57 => { // bit 2, A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x04);
+                        self.set_z_on_zero(self.a.0 & 0x04);
                         8
                     },
                     0x58 => { // bit 3, B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x08);
+                        self.set_z_on_zero(self.b.0 & 0x08);
                         8
                     },
                     0x59 => { // bit 3, C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x08);
+                        self.set_z_on_zero(self.c.0 & 0x08);
                         8
                     },
                     0x5a => { // bit 3, D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x08);
+                        self.set_z_on_zero(self.d.0 & 0x08);
                         8
                     },
                     0x5b => { // bit 3, E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x08);
+                        self.set_z_on_zero(self.e.0 & 0x08);
                         8
                     },
                     0x5c => { // bit 3, H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x08);
+                        self.set_z_on_zero(self.h.0 & 0x08);
                         8
                     },
                     0x5d => { // bit 3, L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x08);
+                        self.set_z_on_zero(self.l.0 & 0x08);
                         8
                     },
                     0x5e => { // bit 3, (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x08);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x08);
                         12
                     },
                     0x5f => { // bit 3, A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x08);
+                        self.set_z_on_zero(self.a.0 & 0x08);
                         8
                     },
                     0x60 => { // bit 4, B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x10);
+                        self.set_z_on_zero(self.b.0 & 0x10);
                         8
                     },
                     0x61 => { // bit 4, C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x10);
+                        self.set_z_on_zero(self.c.0 & 0x10);
                         8
                     },
                     0x62 => { // bit 4, D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x10);
+                        self.set_z_on_zero(self.d.0 & 0x10);
                         8
                     },
                     0x63 => { // bit 4, E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x10);
+                        self.set_z_on_zero(self.e.0 & 0x10);
                         8
                     },
                     0x64 => { // bit 4, H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x10);
+                        self.set_z_on_zero(self.h.0 & 0x10);
                         8
                     },
                     0x65 => { // bit 4, L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x10);
+                        self.set_z_on_zero(self.l.0 & 0x10);
                         8
                     },
                     0x66 => { // bit 4, (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x10);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x10);
                         12
                     },
                     0x67 => { // bit 4, A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x10);
+                        self.set_z_on_zero(self.a.0 & 0x10);
                         8
                     },
                     0x68 => { // bit 5, B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x20);
+                        self.set_z_on_zero(self.b.0 & 0x20);
                         8
                     },
                     0x69 => { // bit 5, C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x20);
+                        self.set_z_on_zero(self.c.0 & 0x20);
                         8
                     },
                     0x6a => { // bit 5, D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x20);
+                        self.set_z_on_zero(self.d.0 & 0x20);
                         8
                     },
                     0x6b => { // bit 5, E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x20);
+                        self.set_z_on_zero(self.e.0 & 0x20);
                         8
                     },
                     0x6c => { // bit 5, H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x20);
+                        self.set_z_on_zero(self.h.0 & 0x20);
                         8
                     },
                     0x6d => { // bit 5, L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x20);
+                        self.set_z_on_zero(self.l.0 & 0x20);
                         8
                     },
                     0x6e => { // bit 5, (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x20);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x20);
                         12
                     },
                     0x6f => { // bit 5, A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x20);
+                        self.set_z_on_zero(self.a.0 & 0x20);
                         8
                     },
                     0x70 => { // bit 6, B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x40);
+                        self.set_z_on_zero(self.b.0 & 0x40);
                         8
                     },
                     0x71 => { // bit 6, C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x40);
+                        self.set_z_on_zero(self.c.0 & 0x40);
                         8
                     },
                     0x72 => { // bit 6, D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x40);
+                        self.set_z_on_zero(self.d.0 & 0x40);
                         8
                     },
                     0x73 => { // bit 6, E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x40);
+                        self.set_z_on_zero(self.e.0 & 0x40);
                         8
                     },
                     0x74 => { // bit 6, H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x40);
+                        self.set_z_on_zero(self.h.0 & 0x40);
                         8
                     },
                     0x75 => { // bit 6, L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x40);
+                        self.set_z_on_zero(self.l.0 & 0x40);
                         8
                     },
                     0x76 => { // bit 6, (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x40);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x40);
                         12
                     },
                     0x77 => { // bit 6, A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x40);
+                        self.set_z_on_zero(self.a.0 & 0x40);
                         8
                     },
                     0x78 => { // bit 7, B
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.b & 0x80);
+                        self.set_z_on_zero(self.b.0 & 0x80);
                         8
                     },
                     0x79 => { // bit 7, C
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.c & 0x80);
+                        self.set_z_on_zero(self.c.0 & 0x80);
                         8
                     },
                     0x7a => { // bit 7, D
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.d & 0x80);
+                        self.set_z_on_zero(self.d.0 & 0x80);
                         8
                     },
                     0x7b => { // bit 7, E
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.e & 0x80);
+                        self.set_z_on_zero(self.e.0 & 0x80);
                         8
                     },
                     0x7c => { // bit 7, H
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.h & 0x80);
+                        self.set_z_on_zero(self.h.0 & 0x80);
                         8
                     },
                     0x7d => { // bit 7, L
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.l & 0x80);
+                        self.set_z_on_zero(self.l.0 & 0x80);
                         8
                     },
                     0x7e => { // bit 7, (HL)
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.read_byte_hl() & 0x80);
+                        self.set_z_on_zero(self.read_byte_hl().0 & 0x80);
                         12
                     },
                     0x7f => { // bit 7, A
                         self.f &= 0x30;
                         self.f |= 0x20;
-                        self.set_z_on_zero(self.a & 0x80);
+                        self.set_z_on_zero(self.a.0 & 0x80);
                         8
                     },
                     0x80 => { // res 0, B
@@ -3435,7 +3436,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0x86 => { // res 0, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0xfe);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0xfe));
                         16
                     },
                     0x87 => { // res 0, A
@@ -3468,7 +3469,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0x8e => { // res 1, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0xfd);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0xfd));
                         16
                     },
                     0x8f => { // res 1, A
@@ -3501,7 +3502,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0x96 => { // res 2, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0xfb);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0xfb));
                         16
                     },
                     0x97 => { // res 2, A
@@ -3534,7 +3535,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0x9e => { // res 3, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0xf7);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0xf7));
                         16
                     },
                     0x9f => { // res 3, A
@@ -3567,7 +3568,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xa6 => { // res 4, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0xef);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0xef));
                         16
                     },
                     0xa7 => { // res 4, A
@@ -3600,7 +3601,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xae => { // res 5, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0xdf);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0xdf));
                         16
                     },
                     0xaf => { // res 5, A
@@ -3633,7 +3634,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xb6 => { // res 6, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0xbf);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0xbf));
                         16
                     },
                     0xb7 => { // res 6, A
@@ -3666,7 +3667,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xbe => { // res 7, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) & 0x7f);
+                        self.write_address(temp_addr, self.read_address(temp_addr) & Wrapping(0x7f));
                         16
                     },
                     0xbf => { // res 7, A
@@ -3699,7 +3700,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xc6 => { // set 0, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x01);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x01));
                         16
                     },
                     0xc7 => { // set 0, A
@@ -3732,7 +3733,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xce => { // set 1, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x02);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x02));
                         16
                     },
                     0xcf => { // set 1, A
@@ -3765,7 +3766,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xd6 => { // set 2, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x04);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x04));
                         16
                     },
                     0xd7 => { // set 2, A
@@ -3798,7 +3799,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xde => { // set 3, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x08);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x08));
                         16
                     },
                     0xdf => { // set 3, A
@@ -3831,7 +3832,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xe6 => { // set 4, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x10);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x10));
                         16
                     },
                     0xe7 => { // set 4, A
@@ -3864,7 +3865,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xee => { // set 5, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x20);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x20));
                         16
                     },
                     0xef => { // set 5, A
@@ -3897,7 +3898,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xf6 => { // set 6, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x40);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x40));
                         16
                     },
                     0xf7 => { // set 6, A
@@ -3930,7 +3931,7 @@ impl<A: AudioController> Emulator<A> {
                     },
                     0xfe => { // set 7, (HL)
                         let temp_addr = self.get_address_hl();
-                        self.write_address(temp_addr, self.read_address(temp_addr) | 0x80);
+                        self.write_address(temp_addr, self.read_address(temp_addr) | Wrapping(0x80));
                         16
                     },
                     0xff => { // set 7, A
@@ -3940,13 +3941,13 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             0xcc => { // call Z, nn
-                if (self.f & 0x80) != 0x00 {
-                    let msb = self.read_address(self.pc + 1);
-                    let lsb = self.read_address(self.pc + 2);
+                if (self.f.0 & 0x80) != 0x00 {
+                    let msb = self.read_address(self.pc + Wrapping(1));
+                    let lsb = self.read_address(self.pc + Wrapping(2));
                     self.sp -= 2;
                     self.pc += 3;
-                    self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     24
                 } else {
                     self.pc += 3;
@@ -3954,27 +3955,27 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             0xcd => { // call nn
-                let msb = self.read_address(self.pc + 1);
-                let lsb = self.read_address(self.pc + 2);
+                let msb = self.read_address(self.pc + Wrapping(1));
+                let lsb = self.read_address(self.pc + Wrapping(2));
                 self.sp -= 2;
                 self.pc += 3;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = ((lsb as usize) << 8) + msb as usize;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                 24
             },
             0xce => { // adc A, n
-                let mut temp_byte = self.read_address(self.pc + 1);
-                let mut temp_byte_2 = self.f & 0x10;
-                self.f = 0x00;
-                if temp_byte_2 != 0x00 {
-                    self.set_c_on_condition(temp_byte == 0xff);
+                let mut temp_byte = self.read_address(self.pc + Wrapping(1));
+                let mut temp_byte_2 = self.f & Wrapping(0x10);
+                self.f.0 = 0x00;
+                if temp_byte_2.0 != 0x00 {
+                    self.set_c_on_condition(temp_byte.0 == 0xff);
                     temp_byte += 1;
                 }
                 self.a += temp_byte;
-                self.set_z_on_zero(self.a);
+                self.set_z_on_zero(self.a.0);
                 self.set_c_on_condition(self.a < temp_byte);
-                temp_byte = temp_byte & 0x0f;
-                temp_byte_2 = self.a & 0x0f;
+                temp_byte &= 0x0f;
+                temp_byte_2 = self.a & Wrapping(0x0f);
                 self.set_h_on_condition(temp_byte > temp_byte_2);
                 self.pc += 2;
                 8
@@ -3982,18 +3983,18 @@ impl<A: AudioController> Emulator<A> {
             0xcf => { // rst 8 (call 0x0008)
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x0008;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0xff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x0008;
                 16
             },
             0xd0 => { // ret NC
-                if (self.f & 0x10) != 0x00 {
+                if (self.f.0 & 0x10) != 0x00 {
                     self.pc += 1;
                     8
                 } else {
                     let (msb, lsb) = self.read_address_16(self.sp);
                     self.sp += 2;
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     20
                 }
             },
@@ -4006,11 +4007,11 @@ impl<A: AudioController> Emulator<A> {
                 12
             },
             0xd2 => { // j NC, nn
-                if (self.f & 0x10) != 0x00 {
+                if (self.f.0 & 0x10) != 0x00 {
                     self.pc += 3;
                     12
                 } else {
-                    self.pc = ((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize;
+                    self.pc.0 = ((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize;
                     16
                 }
             },
@@ -4018,16 +4019,16 @@ impl<A: AudioController> Emulator<A> {
                 self.on_invalid_instruction(instr)
             },
             0xd4 => { // call NC, nn
-                if (self.f & 0x10) != 0x00 {
+                if (self.f.0 & 0x10) != 0x00 {
                     self.pc += 3;
                     12
                 } else {
-                    let msb = self.read_address(self.pc + 1);
-                    let lsb = self.read_address(self.pc + 2);
+                    let msb = self.read_address(self.pc + Wrapping(1));
+                    let lsb = self.read_address(self.pc + Wrapping(2));
                     self.sp -= 2;
                     self.pc += 3;
-                    self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     24
                 }
             },
@@ -4038,13 +4039,13 @@ impl<A: AudioController> Emulator<A> {
                 16
             },
             0xd6 => { // sub A, n
-                let msb = self.read_address(self.pc + 1);
-                self.f = 0x40;
+                let msb = self.read_address(self.pc + Wrapping(1));
+                self.f.0 = 0x40;
                 self.set_c_on_condition(msb > self.a);
-                self.set_h_on_condition((msb & 0x0f) > (self.a & 0x0f));
+                self.set_h_on_condition((msb.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.a -= msb;
-                if self.a == 0x00 {
-                    self.f = 0xc0;
+                if self.a.0 == 0x00 {
+                    self.f.0 = 0xc0;
                 }
                 self.pc += 2;
                 8
@@ -4052,15 +4053,15 @@ impl<A: AudioController> Emulator<A> {
             0xd7 => { // rst 10
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x0010;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x0010;
                 16
             },
             0xd8 => { // ret C
-                if (self.f & 0x10) != 0x00 {
+                if (self.f.0 & 0x10) != 0x00 {
                     let (msb, lsb) = self.read_address_16(self.sp);
                     self.sp += 2;
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     20
                 } else {
                     self.pc += 1;
@@ -4070,13 +4071,13 @@ impl<A: AudioController> Emulator<A> {
             0xd9 => { // reti
                 let (msb, lsb) = self.read_address_16(self.sp);
                 self.sp += 2;
-                self.pc = ((lsb as usize) << 8) + msb as usize;
+                self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                 self.ime = true;
                 16
             },
             0xda => { // j C, nn (abs jump if carry)
-                if (self.f & 0x10) != 0x00 {
-                    self.pc = ((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize;
+                if (self.f.0 & 0x10) != 0x00 {
+                    self.pc.0 = ((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize;
                     16
                 } else {
                     self.pc += 3;
@@ -4087,13 +4088,13 @@ impl<A: AudioController> Emulator<A> {
                 self.on_invalid_instruction(instr)
             },
             0xdc => { // call C, nn
-                if (self.f & 0x10) != 0x00 {
-                    let msb = self.read_address(self.pc + 1);
-                    let lsb = self.read_address(self.pc + 2);
+                if (self.f.0 & 0x10) != 0x00 {
+                    let msb = self.read_address(self.pc + Wrapping(1));
+                    let lsb = self.read_address(self.pc + Wrapping(2));
                     self.sp -= 2;
                     self.pc += 3;
-                    self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                    self.pc = ((lsb as usize) << 8) + msb as usize;
+                    self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                    self.pc.0 = ((lsb.0 as usize) << 8) + msb.0 as usize;
                     24
                 } else {
                     self.pc += 3;
@@ -4105,19 +4106,19 @@ impl<A: AudioController> Emulator<A> {
             },
             0xde => { // sbc A, n
                 let mut temp_byte = self.a;
-                let mut temp_byte_2 = self.f & 0x10;
-                self.f = 0x40;
-                self.a -= self.read_address(self.pc + 1);
-                if temp_byte_2 != 0x00 {
-                    if self.a == 0x00 {
+                let mut temp_byte_2 = self.f & Wrapping(0x10);
+                self.f.0 = 0x40;
+                self.a -= self.read_address(self.pc + Wrapping(1));
+                if temp_byte_2.0 != 0x00 {
+                    if self.a.0 == 0x00 {
                         self.f |= 0x30;
                     }
                     self.a -= 1;
                 }
                 self.set_c_on_condition(self.a > temp_byte);
-                self.set_z_on_zero(self.a);
-                temp_byte_2 = temp_byte & 0x0f;
-                temp_byte = self.a & 0x0f;
+                self.set_z_on_zero(self.a.0);
+                temp_byte_2 &= 0x0f;
+                temp_byte = self.a & Wrapping(0x0f);
                 self.set_h_on_condition(temp_byte > temp_byte_2);
                 self.pc += 2;
                 8
@@ -4125,12 +4126,12 @@ impl<A: AudioController> Emulator<A> {
             0xdf => { // rst 18
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x0018;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x0018;
                 16
             },
             0xe0 => { // ldh (n), A (load to IO port n - ff00 + n)
-                self.write_address(0xff00 + self.read_address(self.pc + 1) as usize, self.a);
+                self.write_address(Wrapping(0xff00 + self.read_address(self.pc + Wrapping(1)).0 as usize), self.a);
                 self.pc += 2;
                 12
             },
@@ -4143,7 +4144,7 @@ impl<A: AudioController> Emulator<A> {
                 12
             },
             0xe2 => { // ldh (C), A (load to IO port C - ff00 + C)
-                self.write_address(0xff00 + self.c as usize, self.a);
+                self.write_address(Wrapping(0xff00 + self.c.0 as usize), self.a);
                 self.pc += 1;
                 8
             },
@@ -4160,32 +4161,32 @@ impl<A: AudioController> Emulator<A> {
                 16
             },
             0xe6 => { // and n
-                self.a = self.a & self.read_address(self.pc + 1);
-                self.f = 0x20;
-                self.set_z_on_zero(self.a);
+                self.a &= self.read_address(self.pc + Wrapping(1));
+                self.f.0 = 0x20;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 2;
                 8
             },
             0xe7 => { // rst 20
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x0020;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x0020;
                 16
             },
             0xe8 => { // add SP, d
-                let msb = self.read_address(self.pc + 1);
-                self.f = 0x00;
+                let msb = self.read_address(self.pc + Wrapping(1)).0;
+                self.f.0 = 0x00;
                 if msb >= 0x80 {
                     let temp_addr = 256 - msb as usize;
                     self.sp -= temp_addr;
-                    self.set_c_on_condition((self.sp & 0x0000ffff) > (temp_addr & 0x0000ffff));
-                    self.set_h_on_condition((self.sp & 0x000000ff) > (temp_addr & 0x000000ff));
+                    self.set_c_on_condition((self.sp.0 & 0x0000ffff) > (temp_addr & 0x0000ffff));
+                    self.set_h_on_condition((self.sp.0 & 0x000000ff) > (temp_addr & 0x000000ff));
                 } else {
                     let temp_addr = msb as usize;
                     self.sp += temp_addr;
-                    self.set_c_on_condition((self.sp & 0x0000ffff) < (temp_addr & 0x0000ffff));
-                    self.set_h_on_condition((self.sp & 0x000000ff) < (temp_addr & 0x000000ff));
+                    self.set_c_on_condition((self.sp.0 & 0x0000ffff) < (temp_addr & 0x0000ffff));
+                    self.set_h_on_condition((self.sp.0 & 0x000000ff) < (temp_addr & 0x000000ff));
                 }
                 self.pc += 2;
                 16
@@ -4195,7 +4196,7 @@ impl<A: AudioController> Emulator<A> {
                 4
             },
             0xea => { // ld (nn), A
-                self.write_address(((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize, self.a);
+                self.write_address(Wrapping(((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize), self.a);
                 self.pc += 3;
                 16
             },
@@ -4209,21 +4210,21 @@ impl<A: AudioController> Emulator<A> {
                 self.on_invalid_instruction(instr)
             },
             0xee => { // xor n
-                self.a = self.a ^ self.read_address(self.pc + 1);
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.a ^= self.read_address(self.pc + Wrapping(1));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 2;
                 8
             },
             0xef => { // rst 28
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x0028;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x0028;
                 16
             },
             0xf0 => { // ldh A, (n)
-                self.a = self.read_address(0xff00 + self.read_address(self.pc + 1) as usize);
+                self.a = self.read_address(Wrapping(0xff00 + self.read_address(self.pc + Wrapping(1)).0 as usize));
                 self.pc += 2;
                 12
             },
@@ -4237,7 +4238,7 @@ impl<A: AudioController> Emulator<A> {
                 12
             },
             0xf2 => { // ldh A, C
-                self.a = self.read_address(0xff00 + self.c as usize);
+                self.a = self.read_address(Wrapping(0xff00 + self.c.0 as usize));
                 self.pc += 1;
                 8
             },
@@ -4256,34 +4257,34 @@ impl<A: AudioController> Emulator<A> {
                 16
             },
             0xf6 => { // or n
-                self.a = self.a | self.read_address(self.pc + 1);
-                self.f = 0x00;
-                self.set_z_on_zero(self.a);
+                self.a = self.a | self.read_address(self.pc + Wrapping(1));
+                self.f.0 = 0x00;
+                self.set_z_on_zero(self.a.0);
                 self.pc += 2;
                 8
             },
             0xf7 => { // rst 30
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x0030;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x0030;
                 16
             },
             0xf8 => { // ld HL, SP+d
-                let msb = self.read_address(self.pc + 1);
-                self.f = 0x00;
+                let msb = self.read_address(self.pc + Wrapping(1));
+                self.f.0 = 0x00;
                 let mut temp_addr = self.sp;
-                if msb >= 0x80 {
-                    temp_addr -= 256 - msb as usize;
+                if msb.0 >= 0x80 {
+                    temp_addr -= 256 - msb.0 as usize;
                     self.set_c_on_condition(temp_addr > self.sp);
-                    self.set_h_on_condition((temp_addr & 0x00ffffff) > (self.sp & 0x00ffffff));
+                    self.set_h_on_condition((temp_addr.0 & 0x00ffffff) > (self.sp.0 & 0x00ffffff));
                 } else {
-                    temp_addr += msb as usize;
+                    temp_addr += msb.0 as usize;
                     self.set_c_on_condition(self.sp > temp_addr);
-                    self.set_h_on_condition((self.sp & 0x00ffffff) > (temp_addr & 0x00ffffff));
+                    self.set_h_on_condition((self.sp.0 & 0x00ffffff) > (temp_addr.0 & 0x00ffffff));
                 }
-                self.h = (temp_addr >> 8) as u8;
-                self.l = (temp_addr & 0xff) as u8;
+                self.h.0 = (temp_addr.0 >> 8) as u8;
+                self.l.0 = (temp_addr.0 & 0x00ff) as u8;
                 self.pc += 2;
                 12
             },
@@ -4293,7 +4294,7 @@ impl<A: AudioController> Emulator<A> {
                 8
             },
             0xfa => { // ld A, (nn)
-                self.a = self.read_address(((self.read_address(self.pc + 2) as usize) << 8) + self.read_address(self.pc + 1) as usize);
+                self.a = self.read_address(Wrapping(((self.read_address(self.pc + Wrapping(2)).0 as usize) << 8) + self.read_address(self.pc + Wrapping(1)).0 as usize));
                 self.pc += 3;
                 16
             },
@@ -4309,9 +4310,9 @@ impl<A: AudioController> Emulator<A> {
                 self.on_invalid_instruction(instr)
             },
             0xfe => { // cp n
-                let msb = self.read_address(self.pc + 1);
-                self.f = 0x40;
-                self.set_h_on_condition((msb & 0x0f) > (self.a & 0x0f));
+                let msb = self.read_address(self.pc + Wrapping(1));
+                self.f.0 = 0x40;
+                self.set_h_on_condition((msb.0 & 0x0f) > (self.a.0 & 0x0f));
                 self.set_c_on_condition(msb > self.a);
                 self.set_z_on_condition(self.a == msb);
                 self.pc += 2;
@@ -4320,81 +4321,81 @@ impl<A: AudioController> Emulator<A> {
             0xff => { // rst 38
                 self.sp -= 2;
                 self.pc += 1;
-                self.write_address_16(self.sp, ((self.pc & 0xff) as u8, (self.pc >> 8) as u8));
-                self.pc = 0x0038;
+                self.write_address_16(self.sp, (Wrapping((self.pc.0 & 0x00ff) as u8), Wrapping((self.pc.0 >> 8) as u8)));
+                self.pc.0 = 0x0038;
                 16
             },
             _ => 0
         }
     }
 
-    pub fn read_address(&self, address: usize) -> u8 {
-        let masked_address = address & 0xffff;
-        match masked_address {
-            0x0000..=0x3fff => self.rom.data[masked_address],
-            0x4000..=0x7fff => self.rom.data[self.rom_bank_offset + masked_address],
-            0x8000..=0x9fff => self.vram[self.vram_bank_offset + masked_address - 0x8000],
+    pub fn read_address(&self, address: Wrapping<usize>) -> Wrapping<u8> {
+        let masked_address = address & Wrapping(0xffff);
+        match masked_address.0 {
+            0x0000..=0x3fff => Wrapping(self.rom.data[masked_address.0]),
+            0x4000..=0x7fff => Wrapping(self.rom.data[(self.rom_bank_offset + masked_address).0]),
+            0x8000..=0x9fff => Wrapping(self.vram[(self.vram_bank_offset + masked_address - Wrapping(0x8000)).0]),
             0xa000..=0xbfff => {
                 if let Some(sram) = &self.sram {
                     if sram.has_timer && sram.timer_mode > 0 {
                         // TODO - Check this bit
-                        sram.timer_data[sram.timer_mode as usize - 0x08]
+                        Wrapping(sram.timer_data[sram.timer_mode as usize - 0x08])
                     } else {
-                        sram.read_byte(masked_address - 0xa000)
+                        sram.read_byte(masked_address - Wrapping(0xa000))
                     }
                 } else {
-                    0xff
+                    Wrapping(0xff)
                 }
             },
-            0xc000..=0xcfff => self.wram[masked_address - 0xc000],
-            0xd000..=0xdfff => self.wram[self.wram_bank_offset + masked_address - 0xd000],
-            0xe000..=0xefff => self.wram[masked_address - 0xe000],
-            0xf000..=0xfdff => self.wram[self.wram_bank_offset + masked_address - 0xf000],
+            0xc000..=0xcfff => Wrapping(self.wram[(masked_address - Wrapping(0xc000)).0]),
+            0xd000..=0xdfff => Wrapping(self.wram[(self.wram_bank_offset + masked_address - Wrapping(0xd000)).0]),
+            0xe000..=0xefff => Wrapping(self.wram[(masked_address - Wrapping(0xe000)).0]),
+            0xf000..=0xfdff => Wrapping(self.wram[(self.wram_bank_offset + masked_address - Wrapping(0xf000)).0]),
             0xfe00..=0xfe9f => {
                 if self.oam_protected {
-                    0xff
+                    Wrapping(0xff)
                 } else {
-                    self.oam[(masked_address & 0x00ff) % 160]
+                    Wrapping(self.oam[(masked_address & Wrapping(0x00ff)).0 % 160])
                 }
             },
-            0xfea0..=0xfeff => 0xff,
-            0xff00..=0xff7f => self.read_address(masked_address & 0x007f),
-            _ => self.io_ports[masked_address & 0x00ff]
+            0xfea0..=0xfeff => Wrapping(0xff),
+            0xff00..=0xff7f => self.read_address(masked_address & Wrapping(0x007f)),
+            _ => Wrapping(self.io_ports[(masked_address & Wrapping(0x00ff)).0])
         }
     }
 
-    pub fn write_address(&mut self, address: usize, byte: u8) {
-        let masked_address = address & 0xffff;
-        match masked_address {
+    pub fn write_address(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
+        let masked_address = address & Wrapping(0xffff);
+        match masked_address.0 {
             0x0000..=0x7fff => {
                 match self.rom.mbc {
                     Mbc::None => {},
                     Mbc::Mbc1 => {
-                        match masked_address {
+                        match masked_address.0 {
                             0x0000..=0x1fff => {
                                 // Only 4 bits are used. Writing 0xa enables SRAM, anything else disables it
                                 if let Some(sram) = &mut self.sram {
-                                    sram.enable_flag = (byte & 0x0f) == 0x0a;
+                                    sram.enable_flag = (byte & Wrapping(0x0f)).0 == 0x0a;
                                 }
                             },
                             0x2000..=0x3fff => {
                                 // Set low 5 bits of bank number
                                 self.rom_bank_offset &= 0xfff80000;
-                                let mut byte = byte & 0x1f;
-                                if byte == 0x00 {
-                                    byte = 0x01;
+                                let mut byte = byte & Wrapping(0x1f);
+                                if byte.0 == 0x00 {
+                                    byte = Wrapping(0x01);
                                 }
-                                self.rom_bank_offset |= byte as usize * 0x4000;
+                                self.rom_bank_offset |= byte.0 as usize * 0x4000;
                                 self.rom_bank_offset &= self.rom.bank_select_mask as usize * 0x4000;
                             },
                             0x4000..=0x5fff => {
-                                let byte = byte & 0x03;
+                                let byte = byte & Wrapping(0x03);
                                 if let Some(sram) = &mut self.sram {
                                     if self.rom_mbc_mode != 0 {
-                                        sram.bank_offset = byte as usize * 0x2000; // Select RAM bank
+                                        sram.bank_offset = Wrapping(byte.0 as usize) * Wrapping(0x2000); // Select RAM bank
                                     } else {
                                         self.rom_bank_offset &= 0xffe7c000;
-                                        self.rom_bank_offset |= byte as usize * 0x80000;
+                                        self.rom_bank_offset |= byte.0 as usize * 0x80000;
                                         self.rom_bank_offset &= self.rom.bank_select_mask as usize * 0x4000;
                                     }
                                 } else {
@@ -4405,52 +4406,52 @@ impl<A: AudioController> Emulator<A> {
                                 self.rom_mbc_mode = 0;
                                 if let Some(sram) = &self.sram {
                                     if sram.size_bytes > 8192 {
-                                        self.rom_mbc_mode = byte as u32 & 0x01;
+                                        self.rom_mbc_mode = byte.0 as u32 & 0x01;
                                     }
                                 }
                             }
                         }
                     },
                     Mbc::Mbc2 => {
-                        match masked_address {
+                        match masked_address.0 {
                             0x0000..=0x0fff => {
                                 if let Some(sram) = &mut self.sram {
                                     // Only 4 bits are used. Writing 0xa enables SRAM.
-                                    sram.enable_flag = (byte & 0x0f) == 0x0a;
+                                    sram.enable_flag = (byte.0 & 0x0f) == 0x0a;
                                 }
                             },
                             0x2100..=0x21fe => {
-                                let mut byte = (byte & 0x0f) & self.rom.bank_select_mask as u8;
-                                if byte == 0x00 {
-                                    byte = 0x01;
+                                let mut byte = (byte & Wrapping(0x0f)) & Wrapping(self.rom.bank_select_mask as u8);
+                                if byte.0 == 0x00 {
+                                    byte = Wrapping(0x01);
                                 }
-                                self.rom_bank_offset = byte as usize * 0x4000;
+                                self.rom_bank_offset = Wrapping(byte.0 as usize * 0x4000);
                             },
                             _ => {}
                         }
                     },
                     Mbc::Mbc3 => {
-                        match masked_address {
+                        match masked_address.0 {
                             0x0000..=0x1fff => {
                                 if let Some(sram) = &mut self.sram {
-                                    sram.enable_flag = (byte & 0x0f) == 0x0a; // Also enables timer registers
+                                    sram.enable_flag = (byte.0 & 0x0f) == 0x0a; // Also enables timer registers
                                 }
                             },
                             0x2000..=0x3fff => {
-                                let mut byte = byte & self.rom.bank_select_mask as u8;
-                                if byte == 0x00 {
-                                    byte = 0x01;
+                                let mut byte = byte & Wrapping(self.rom.bank_select_mask as u8);
+                                if byte.0 == 0x00 {
+                                    byte = Wrapping(0x01);
                                 }
-                                self.rom_bank_offset = byte as usize * 0x4000;
+                                self.rom_bank_offset = Wrapping(byte.0 as usize * 0x4000);
                             },
                             0x4000..=0x5fff => {
                                 if let Some(sram) = &mut self.sram {
-                                    let byte = byte & 0x0f;
-                                    if byte < 0x04 {
-                                        sram.bank_offset = byte as usize * 0x2000;
+                                    let byte = byte & Wrapping(0x0f);
+                                    if byte.0 < 0x04 {
+                                        sram.bank_offset = Wrapping(byte.0 as usize) * Wrapping(0x2000);
                                         sram.timer_mode = 0;
-                                    } else if (byte >= 0x08) && (byte < 0x0d) {
-                                        sram.timer_mode = byte as u32;
+                                    } else if (byte.0 >= 0x08) && (byte.0 < 0x0d) {
+                                        sram.timer_mode = byte.0 as u32;
                                     } else {
                                         sram.timer_mode = 0;
                                     }
@@ -4458,32 +4459,32 @@ impl<A: AudioController> Emulator<A> {
                             },
                             _ => {
                                 if let Some(sram) = &mut self.sram {
-                                    let byte = byte & 0x01;
-                                    if (sram.timer_latch == 0x00) && (byte == 0x01) {
+                                    let byte = byte & Wrapping(0x01);
+                                    if (sram.timer_latch == 0x00) && (byte.0 == 0x01) {
                                         sram.latch_timer_data();
                                     }
-                                    sram.timer_latch = byte as u32;
+                                    sram.timer_latch = byte.0 as u32;
                                 }
                             }
                         }
                     },
                     Mbc::Mbc5 => {
-                        match masked_address {
+                        match masked_address.0 {
                             0x0000..=0x1fff => {
                                 // RAMG - 4 bits, enable external RAM by writing 0xa
                                 if let Some(sram) = &mut self.sram {
-                                    sram.enable_flag = (byte & 0x0f) == 0x0a;
+                                    sram.enable_flag = (byte.0 & 0x0f) == 0x0a;
                                 }
                             },
                             0x2000..=0x2fff => {
                                 // ROMB0 - lower 8 bits of 9-bit ROM bank (note MBC5 can select bank 0 here)
-                                let masked_byte = byte as usize & self.rom.bank_select_mask as usize;
-                                self.rom_bank_offset = (self.rom_bank_offset & 0x00400000) | (masked_byte * 0x4000);
+                                let masked_byte = byte.0 as usize & self.rom.bank_select_mask as usize;
+                                self.rom_bank_offset = (self.rom_bank_offset & Wrapping(0x00400000)) | Wrapping(masked_byte * 0x4000);
                             },
                             0x3000..=0x3fff => {
                                 // ROMB1 - 1 bit, upper bit of 9-bit RAM bank (note MBC5 can select bank 0 here)
                                 self.rom_bank_offset &= 0x003fc000;
-                                if (byte & 0x01) != 0x00 {
+                                if (byte.0 & 0x01) != 0x00 {
                                     self.rom_bank_offset |= 0x00004000;
                                 }
                                 self.rom_bank_offset &= self.rom.bank_select_mask as usize * 0x4000;
@@ -4491,7 +4492,7 @@ impl<A: AudioController> Emulator<A> {
                             0x4000..=0x5fff => {
                                 // RAMB - 4-bit RAM bank
                                 if let Some(sram) = &mut self.sram {
-                                    sram.bank_offset = (byte & 0x0f) as usize * 0x2000;
+                                    sram.bank_offset = Wrapping((byte.0 & 0x0f) as usize) * Wrapping(0x2000);
                                 }
                             },
                             _ => {} // Writing to 0x6000 - 0x7fff does nothing
@@ -4505,37 +4506,37 @@ impl<A: AudioController> Emulator<A> {
                 }
 
                 // Mask to address within range 0x0000-0x1fff and write to that VRAM address
-                let masked_address = masked_address & 0x1fff;
-                self.vram[self.vram_bank_offset + masked_address] = byte;
+                let masked_address = masked_address & Wrapping(0x1fff);
+                self.vram[(self.vram_bank_offset + masked_address).0] = byte.0;
 
                 // Decode character set from GB format to something more computer-friendly, only if writing within tileset
-                if masked_address >= 0x1800 {
+                if masked_address.0 >= 0x1800 {
                     return;
                 }
 
                 // Get the pair of bytes just modified (i.e. one row in the character)
                 // Note there are 384 characters in the map, per VRAM bank, each stored with 16 bytes
-                let relative_vram_address = masked_address & 0x1ffe;
-                let byte1 = self.vram[self.vram_bank_offset + relative_vram_address] as u32 & 0x000000ff;
-                let byte2 = self.vram[self.vram_bank_offset + relative_vram_address + 1] as u32 & 0x000000ff;
+                let relative_vram_address = masked_address & Wrapping(0x1ffe);
+                let byte1 = self.vram[(self.vram_bank_offset + relative_vram_address).0] as u32 & 0x000000ff;
+                let byte2 = self.vram[(self.vram_bank_offset + relative_vram_address + Wrapping(1)).0] as u32 & 0x000000ff;
 
 
                 // Find the address into decoded data to update now
                 // The output format uses 64 bytes per tile rather than 16, hence input address * 4
-                let mut output_address = relative_vram_address * 4;
-                if self.vram_bank_offset != 0 {
+                let mut output_address = relative_vram_address * Wrapping(4);
+                if self.vram_bank_offset.0 != 0 {
                     output_address += 24576;
                 }
 
                 // Update the tile set cache in GPU
-                self.tile_set[output_address] = ((byte2 >> 6) & 0x02) + (byte1 >> 7);
-                self.tile_set[output_address + 1] = ((byte2 >> 5) & 0x02) + ((byte1 >> 6) & 0x01);
-                self.tile_set[output_address + 2] = ((byte2 >> 4) & 0x02) + ((byte1 >> 5) & 0x01);
-                self.tile_set[output_address + 3] = ((byte2 >> 3) & 0x02) + ((byte1 >> 4) & 0x01);
-                self.tile_set[output_address + 4] = ((byte2 >> 2) & 0x02) + ((byte1 >> 3) & 0x01);
-                self.tile_set[output_address + 5] = ((byte2 >> 1) & 0x02) + ((byte1 >> 2) & 0x01);
-                self.tile_set[output_address + 6] = (byte2 & 0x02) + ((byte1 >> 1) & 0x01);
-                self.tile_set[output_address + 7] = ((byte2 << 1) & 0x02) + (byte1 & 0x01);
+                self.tile_set[output_address.0] = ((byte2 >> 6) & 0x02) + (byte1 >> 7);
+                self.tile_set[(output_address + Wrapping(1)).0] = ((byte2 >> 5) & 0x02) + ((byte1 >> 6) & 0x01);
+                self.tile_set[(output_address + Wrapping(2)).0] = ((byte2 >> 4) & 0x02) + ((byte1 >> 5) & 0x01);
+                self.tile_set[(output_address + Wrapping(3)).0] = ((byte2 >> 3) & 0x02) + ((byte1 >> 4) & 0x01);
+                self.tile_set[(output_address + Wrapping(4)).0] = ((byte2 >> 2) & 0x02) + ((byte1 >> 3) & 0x01);
+                self.tile_set[(output_address + Wrapping(5)).0] = ((byte2 >> 1) & 0x02) + ((byte1 >> 2) & 0x01);
+                self.tile_set[(output_address + Wrapping(6)).0] = (byte2 & 0x02) + ((byte1 >> 1) & 0x01);
+                self.tile_set[(output_address + Wrapping(7)).0] = ((byte2 << 1) & 0x02) + (byte1 & 0x01);
             },
             0xa000..=0xbfff => {
                 if let Some(sram) = &mut self.sram {
@@ -4543,14 +4544,14 @@ impl<A: AudioController> Emulator<A> {
                         if sram.has_timer {
                             if sram.timer_mode > 0 {
                                 sram.latch_timer_data();
-                                sram.write_timer_data(sram.timer_mode as usize, byte);
-                                sram.timer_data[sram.timer_mode as usize] = byte;  // TODO - Check this
-                            } else if sram.bank_offset < 0x8000 {
+                                sram.write_timer_data(sram.timer_mode as usize, byte.0);
+                                sram.timer_data[sram.timer_mode as usize] = byte.0;  // TODO - Check this
+                            } else if sram.bank_offset.0 < 0x8000 {
                                 sram.write_byte(masked_address, byte);
                             }
                         } else {
                             let byte = if self.rom.mbc == Mbc::Mbc2 {
-                                byte & 0x0f
+                                byte & Wrapping(0x0f)
                             } else {
                                 byte
                             };
@@ -4560,48 +4561,48 @@ impl<A: AudioController> Emulator<A> {
                 }
             },
             0xc000..=0xcfff => {
-                self.wram[masked_address & 0x0fff] = byte;
+                self.wram[(masked_address & Wrapping(0x0fff)).0] = byte.0;
             },
             0xd000..=0xdfff => {
-                self.wram[self.wram_bank_offset + (masked_address & 0x0fff)] = byte;
+                self.wram[(self.wram_bank_offset + (masked_address & Wrapping(0x0fff))).0] = byte.0;
             },
             0xe000..=0xefff => {
-                self.wram[masked_address & 0x0fff] = byte;
+                self.wram[(masked_address & Wrapping(0x0fff)).0] = byte.0;
             },
             0xf000..=0xfdff => {
-                self.wram[self.wram_bank_offset + (masked_address & 0x0fff)] = byte;
+                self.wram[(self.wram_bank_offset + (masked_address & Wrapping(0x0fff))).0] = byte.0;
             },
             0xfe00..=0xfe9f => {
                 if !self.oam_protected {
-                    self.oam[(masked_address & 0x00ff) % 160] = byte;
+                    self.oam[(masked_address & Wrapping(0x00ff)).0 % 160] = byte.0;
                 }
             },
             0xfea0..=0xfeff => {}, // Unusable
             0xff00..=0xff7f => {
-                self.write_io(masked_address & 0x007f, byte);
+                self.write_io(masked_address & Wrapping(0x007f), byte);
             },
             _ => {
-                self.io_ports[masked_address & 0x00ff] = byte;
+                self.io_ports[(masked_address & Wrapping(0x00ff)).0] = byte.0;
             }
         }
     }
 
-    pub fn read_address_16(&self, address: usize) -> (u8, u8) {
+    pub fn read_address_16(&self, address: Wrapping<usize>) -> (Wrapping<u8>, Wrapping<u8>) {
         let msb = self.read_address(address);
-        let lsb = self.read_address(address + 1);
+        let lsb = self.read_address(address + Wrapping(1));
         (msb, lsb)
     }
 
-    pub fn write_address_16(&mut self, address: usize, bytes: (u8, u8)) {
+    pub fn write_address_16(&mut self, address: Wrapping<usize>, bytes: (Wrapping<u8>, Wrapping<u8>)) {
         self.write_address(address, bytes.0);
-        self.write_address(address + 1, bytes.1)
+        self.write_address(address + Wrapping(1), bytes.1)
     }
 
-    pub fn read_io(&self, address: usize) -> u8 {
+    pub fn read_io(&self, address: Wrapping<usize>) -> Wrapping<u8> {
         todo!()
     }
 
-    pub fn write_io(&mut self, address: usize, byte: u8) {
+    pub fn write_io(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
 
     }
 
@@ -4613,11 +4614,11 @@ impl<A: AudioController> Emulator<A> {
         self.oam_protected = protected;
     }
 
-    pub fn perform_and(&mut self, address: usize, byte: u8) {
+    pub fn perform_and(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
         self.write_address(address, self.read_address(address) & byte);
     }
 
-    pub fn perform_or(&mut self, address: usize, byte: u8) {
+    pub fn perform_or(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
         self.write_address(address, self.read_address(address) | byte);
     }
 }
