@@ -14,6 +14,10 @@ const GB_FREQ: u64 = 4194304;
 const SGB_FREQ: u64 = 4295454;
 const CGB_FREQ: u64 = 8400000;
 
+const STOCK_PALLETTE_BG: [u32; 4] = [ 0xffffffff, 0xff88b0b0, 0xff507878, 0xff000000 ];
+const STOCK_PALETTE_OBJ_1: [u32; 4] = [ 0xffffffff, 0xff5050f0, 0xff2020a0, 0xff000000 ];
+const STOCK_PALETTE_OBJ_2: [u32; 4] = [ 0xffffffff, 0xffa0a0a0, 0xff404040, 0xff000000 ];
+
 #[derive(Eq, PartialEq, Copy, Clone)]
 pub enum CpuType {
     Dmg,
@@ -94,8 +98,20 @@ pub struct Emulator<A: AudioController> {
     needing_clear: bool,
     gpu_mode: GpuMode,
     tile_set: Vec<u32>,
+    cgb_bg_palette: [u32; 32],
+    cgb_bg_pal_data: [Wrapping<u8>; 64],
     cgb_bg_pal_index: u32,
+    cgb_bg_pal_increment: u32,
+    cgb_obj_palette: [u32; 32],
+    cgb_obj_pal_data: [Wrapping<u8>; 64],
     cgb_obj_pal_index: u32,
+    cgb_obj_pal_increment: u32,
+
+    // Colour palettes
+    translated_palette_bg: [u32; 4],
+    translated_palette_obj: [u32; 8],
+    sgb_palette_translation_bg: [u32; 4],
+    sgb_palette_translation_obj: [u32; 8],
 
     // Serial
     serial_request: bool,
@@ -163,8 +179,19 @@ impl<A: AudioController> Emulator<A> {
             needing_clear: false,
             gpu_mode: GpuMode::VBlank,
             tile_set: vec![0; 2 * 384 * 8 * 8], // 2 VRAM banks, 384 tiles, 8 rows, 8 pixels per row
+            cgb_bg_palette: [0; 32],
+            cgb_bg_pal_data: [Wrapping(0); 64],
             cgb_bg_pal_index: 0,
+            cgb_bg_pal_increment: 0,
+            cgb_obj_palette: [0; 32],
+            cgb_obj_pal_data: [Wrapping(0); 64],  
             cgb_obj_pal_index: 0,
+            cgb_obj_pal_increment: 0,
+
+            translated_palette_bg: [0; 4],
+            translated_palette_obj: [0; 8],
+            sgb_palette_translation_bg: [0; 4],
+            sgb_palette_translation_obj: [0; 8],
 
             serial_request: false,
             serial_is_transferring: false,
@@ -4599,11 +4626,411 @@ impl<A: AudioController> Emulator<A> {
     }
 
     pub fn read_io(&self, address: Wrapping<usize>) -> Wrapping<u8> {
-        todo!()
+        match address.0 {
+            0x00 => { // Used for keypad status
+                let byte = self.io_ports[0] & Wrapping(0x30);
+                if byte.0 == 0x20 {
+                    Wrapping(self.current_key_dir) // Note that only bits 0-3 are read here
+                } else if byte.0 == 0x10 {
+                    Wrapping(self.current_key_but)
+                } else if self.sgb.multi_enabled && (byte.0 == 0x30) {
+                    Wrapping(self.sgb.read_joypad_id as u8)
+                } else {
+                    Wrapping(0x0f)
+                }
+            },
+            0x01 => self.io_ports[1], // Serial data
+            0x02 => self.io_ports[2], // Serial control
+            0x11 => self.io_ports[0x11] & Wrapping(0xc0), // NR11
+            0x13 => Wrapping(0), // NR13
+            0x14 => self.io_ports[0x14] & Wrapping(0x40), // NR14
+            0x16 => self.io_ports[0x16] & Wrapping(0xc0), // NR21
+            0x18 => Wrapping(0), // NR23
+            0x19 => self.io_ports[0x19] & Wrapping(0x40), // NR24
+            0x1d => Wrapping(0), // NR33
+            0x1e => self.io_ports[0x1e] & Wrapping(0x40), // NR34
+            0x23 => self.io_ports[0x23] & Wrapping(0x40), // NR44
+            0x69 => { // CBG background palette data (using address set by 0xff68)
+                if self.cpu_type == CpuType::Cgb {
+                    self.cgb_bg_pal_data[self.cgb_bg_pal_index as usize]
+                } else {
+                    Wrapping(0)
+                }
+            },
+            0x6b => { // CBG sprite palette data (using address set by 0xff6a)
+                if self.cpu_type == CpuType::Cgb {
+                    self.cgb_obj_pal_data[self.cgb_obj_pal_index as usize]
+                } else {
+                    Wrapping(0)
+                }
+            },
+            _ => self.io_ports[address.0]
+        }
     }
 
-    pub fn write_io(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
+    pub fn write_io(&mut self, address: Wrapping<usize>, data: Wrapping<u8>) {
+        match address.0 {
+            0x00 => {
+                let byte = data & Wrapping(0x30);
+                if self.cpu_type == CpuType::Sgb {
+                    if byte.0 == 0x00 {
+                        if !self.sgb.reading_command {
+                            // Begin command packet transfer:
+                            self.sgb.reading_command = true;
+                            self.sgb.read_command_bits = 0;
+                            self.sgb.read_command_bytes = 0;
+                            self.sgb.no_packets_sent = 0;
+                            self.sgb.no_packets_to_send = 1; // Will get amended later if needed
+                        }
+                        self.io_ports[0] = byte;
+                    } else if byte.0 == 0x20 {
+                        self.io_ports[0] = byte;
+                        self.io_ports[0] |= self.current_key_dir;
+                        if self.sgb.reading_command {
+                            // Transfer a '0'
+                            let display_flags = self.read_address(Wrapping(0xff40)).0;
+                            if self.sgb.read_command_bytes >= 16 {
+                                self.sgb.no_packets_sent += 1;
+                                self.sgb.read_command_bytes = 0;
+                                if self.sgb.no_packets_sent >= self.sgb.no_packets_to_send {
+                                    self.sgb.check_packets(&self.vram, self.vram_bank_offset.0, display_flags);
+                                    self.sgb.reading_command = false;
+                                }
+                                return;
+                            }
+                            self.sgb.command_bits[self.sgb.read_command_bits] = 0;
+                            self.sgb.read_command_bits += 1;
+                            if self.sgb.read_command_bits >= 8 {
+                                self.sgb.check_byte();
+                            }
+                            if self.sgb.no_packets_sent >= self.sgb.no_packets_to_send {
+                                self.sgb.check_packets(&self.vram, self.vram_bank_offset.0, display_flags);
+                                self.sgb.reading_command = false;
+                                self.sgb.no_packets_sent = 0;
+                                self.sgb.no_packets_to_send = 0;
+                            }
+                        }
+                    } else if byte.0 == 0x10 {
+                        self.io_ports[0] = byte;
+                        self.io_ports[0] |= self.current_key_but;
+                        if self.sgb.reading_command {
+                            // Transfer a '1'
+                            if self.sgb.read_command_bytes >= 16 {
+                                // Error in transmission - 1 at end of packet
+                                self.sgb.reading_command = false;
+                                return;
+                            }
+                            self.sgb.command_bits[self.sgb.read_command_bits] = 1;
+                            self.sgb.read_command_bits += 1;
+                            if self.sgb.read_command_bits >= 8 {
+                                self.sgb.check_byte();
+                            }
+                        }
+                    } else if self.sgb.multi_enabled && !self.sgb.reading_command {
+                        if self.io_ports[0].0 < 0x30 {
+                            self.sgb.read_joypad_id -= 1;
+                            if self.sgb.read_joypad_id < 0x0c {
+                                self.sgb.read_joypad_id = 0x0f;
+                            }
+                        }
+                        self.io_ports[0] = byte;
+                    } else {
+                        self.io_ports[0] = byte;
+                    }
+                } else {
+                    self.io_ports[0] = byte;
+                    if byte.0 == 0x20 {
+                        self.io_ports[0] |= self.current_key_dir;
+                    } else if byte.0 == 0x10 {
+                        self.io_ports[0] |= self.current_key_but;
+                    }
+                }
+            },
+            0x01 => { // Serial data
+                if !self.serial_is_transferring || self.serial_clock_is_external {
+                    self.io_ports[1] = data;
+                }
+            },
+            0x02 => { // Serial transfer control
+                if (data.0 & 0x80) != 0x00 {
+                    let byte = data;
+                    self.io_ports[2] = data & Wrapping(0x83);
+                    self.serial_is_transferring = true;
+                    if (data.0 & 0x01) != 0 {
+                        // Attempt to send a byte
+                        self.serial_clock_is_external = false;
+                        self.serial_timer = 512 * 1;
+                        if self.cpu_type != CpuType::Cgb {
+                            self.io_ports[2] |= Wrapping(0x02);
+                        } else if (data.0 & 0x02) != 0x00 {
+                            self.serial_timer /= 32;
+                        }
+                    } else {
+                        // Listen for a transfer
+                        self.serial_clock_is_external = true;
+                        self.serial_timer = 1;
+                    }
+                } else {
+                    self.io_ports[2] = data & Wrapping(0x83);
+                    self.serial_is_transferring = false;
+                    self.serial_request = false;
+                }
+            },
+            0x04 => { // Divider register (writing resets to 0)
+                self.io_ports[0x04] = Wrapping(0x00);
+            },
+            0x07 => { // Timer control
+                self.timer_running = (data.0 & 0x04) != 0x00;
+                self.timer_inc_time = match data.0 & 0x03 {
+                    0 => 1024,
+                    1 => 16,
+                    2 => 64,
+                    3 => 256,
+                    _ => self.timer_inc_time
+                };
+                self.io_ports[0x07] = data & Wrapping(0x07);
+            },
+            0x10 => {
+                self.io_ports[0x10] = data & Wrapping(0x7f);
+            },
+            0x14 => { // NR14 (audio channel 1 initialisation)
+                self.io_ports[0x14] = data & Wrapping(0xc7);
+                // audioUnit.restartChannel1();
+            },
+            0x19 => { // NR24 (audio channel 2 initialisation)
+                self.io_ports[0x19] = data & Wrapping(0xc7);
+                // audioUnit.restartChannel2();
+            },
+            0x1a => {
+                let byte = data & Wrapping(0x80);
+                self.io_ports[0x1a] = byte;
+                if byte.0 == 0x00 {
+                    // audioUnit.stopChannel3();
+                }
+            },
+            0x1c => {
+                self.io_ports[0x1c] = data & Wrapping(0x60);
+            },
+            0x1e => { // NR34 (audio channel 3 initialisation)
+                self.io_ports[0x1e] = data & Wrapping(0xc7);
+                // audioUnit.restartChannel3();
+            },
+            0x20 => {
+                self.io_ports[0x20] = data & Wrapping(0x3f);
+            },
+            0x23 => { // NR44 (audio channel 4 initialisation)
+                self.io_ports[0x23] = data & Wrapping(0xc0);
+                // audioUnit.restartChannel4();
+            },
+            0x24 => { // NR50 (Vin audio enable and volume - not emulated)
+                self.io_ports[0x24] = data;
+            },
+            0x25 => { // NR51 (channel routing to output)
+                self.io_ports[0x25] = data;
+                // audioUnit.updateRoutingMasks();
+            },
+            0x26 => { // NR52 (sound on/off)
+                let byte = data & Wrapping(0x80);
+                if byte.0 == 0 {
+                    self.io_ports[0x26] = Wrapping(0);
+                    // audioUnit.stopAllSound();
+                } else {
+                    self.io_ports[0x26] = (self.io_ports[0x26] & Wrapping(0x0f)) | byte;
+                    // audioUnit.reenableAudio();
+                }
+            },
+            0x30..=0x3f => {
+                self.io_ports[address.0] = data;
+                // audioUnit.updateWaveformData(address.0);
+            },
+            0x40 => { // LCD ctrl
+                if data.0 < 128 {
+                    self.vram_protected = false;
+                    self.oam_protected = false;
+                    self.blanked_screen = false;
+                    self.io_ports[0x41] &= 0xfc;
+                    self.io_ports[0x44] = Wrapping(0);
+                    if self.io_ports[0x40].0 >= 0x80 {
+                        // Try to clear the screen. Be prepared to wait because frame rate is irrelevant when LCD is disabled.
+                        // if !frameManager.frameIsInProgress() {
+                        //     let mut frameBuffer = frameManager.beginNewFrame();
+                        //     if frameBuffer.is_none() {
+                        //         std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                        //         frameBuffer = frameManager.beginNewFrame();
+                        //     }
 
+                        //     // If a frame was obtained, clear it to black and flag it for rendering
+                        //     if let Some(buffer) = frameBuffer {
+                        //         for io_index in 0..(160 * 144) {
+                        //             buffer[address.0] = 0x000000ff;
+                        //         }
+                        //         frameManager.finishCurrentFrame();
+                        //     }
+                        // }
+                    }
+                } else {
+                    if self.io_ports[0x40].0 < 0x80 {
+                        // LCD being enabled, attempt to reserve a frame buffer for drawing
+                        // if !frameManager.frameIsInProgress() {
+                        //     frameManager.beginNewFrame();
+                        // }
+                    }
+                }
+                self.io_ports[0x40] = data;
+            },
+            0x41 => { // LCD status
+                self.io_ports[0x41] &= 0x07; // Bits 0-2 are read-only. Bit 7 doesn't exist.
+                self.io_ports[0x41] |= data & Wrapping(0x78);
+            },
+            0x44 => {} // LCD Line No (read-only)
+            0x46 => { // Launch OAM DMA transfer
+                self.io_ports[0x46] = data;
+                if data.0 < 0x80 {
+                    return; // Cannot copy from ROM in this way
+                }
+                let mut word = (data.0 as usize) << 8;
+                for count in 0..160 {
+                    self.oam[count] = self.read_address(Wrapping(word));
+                    word += 1;
+                }
+            },
+            0x47 => { // Mono palette
+                self.io_ports[0x47] = data;
+                self.translate_palette_bg(data.0 as usize);
+            },
+            0x48 => { // Mono palette
+                self.io_ports[0x48] = data;
+                self.translate_palette_obj_1(data.0 as usize);
+            },
+            0x49 => { // Mono palette
+                self.io_ports[0x49] = data;
+                self.translate_palette_obj_2(data.0 as usize);
+            },
+            0x4d => { // KEY1 (changes clock speed)
+                if self.cpu_type != CpuType::Cgb {
+                    // Only works for GBC
+                    return;
+                }
+                if (data.0 & 0x01) != 0x00 {
+                    self.io_ports[0x4d] |= 0x01;
+                } else {
+                    self.io_ports[0x4d] &= 0x80;
+                }
+            },
+            0x4f => { // VRAM bank
+                if self.cpu_type == CpuType::Cgb {
+                    self.io_ports[0x4f] = data & Wrapping(0x01); // 1-bit register
+                    self.vram_bank_offset = Wrapping((data.0 & 0x01) as usize * 0x2000);
+                }
+            },
+            0x51 => { // HDMA1
+                self.io_ports[0x51] = data;
+            },
+            0x52 => { // HDMA2
+                self.io_ports[0x52] = data & Wrapping(0xf0);
+            },
+            0x53 => { // HDMA3
+                self.io_ports[0x53] = data & Wrapping(0x1f);
+            },
+            0x54 => { // HDMA4
+                self.io_ports[0x54] = data & Wrapping(0xf0);
+            },
+            0x55 => { // HDMA5 (initiates DMA transfer from ROM or RAM to VRAM)
+                if self.cpu_type != CpuType::Cgb {
+                    return;
+                }
+                if (data.0 & 0x80) == 0x00 {
+                    // General purpose DMA
+                    if self.io_ports[0x55].0 != 0xff {
+                        // H-blank DMA already running
+                        self.io_ports[0x55] = data; // Can be used to halt H-blank DMA
+                        return;
+                    }
+                    let mut word = ((self.io_ports[0x51].0 as usize) << 8) + self.io_ports[0x52].0 as usize; // DMA source
+                    if (word & 0xe000) == 0x8000 {
+                        // Don't do transfers within VRAM
+                        return;
+                    }
+                    if word >= 0xe000 {
+                        // Don't take source data from these addresses either
+                        return;
+                    }
+                    let mut word_2 = ((self.io_ports[0x53].0 as usize) << 8) + self.io_ports[0x54].0 as usize + 0x8000; // DMA destination
+                    let bytes_to_transfer = ((data.0 & 0x7f) + 1) * 16;
+                    for count in 0..bytes_to_transfer {
+                        self.write_address(Wrapping(word_2), self.read_address(Wrapping(word)));
+                        word += 1;
+                        word_2 += 1;
+                        word_2 &= 0x9fff; // Keep it within VRAM
+                    }
+                    //if (ClockFreq == GBC_FREQ) clocks_acc -= BytesToTransfer * 4;
+                    //else clocks_acc -= BytesToTransfer * 2;
+                    self.io_ports[0x55] = Wrapping(0xff);
+                } else {
+                    // H-blank DMA
+                    self.io_ports[0x55] = data;
+                }
+            },
+            0x56 => { // Infrared
+                self.io_ports[0x56] = (data & Wrapping(0xc1)) | Wrapping(0x02); // Setting bit 2 indicates 'no light received'
+            },
+            0x68 => { // CGB background palette index
+                self.io_ports[0x68] = data & Wrapping(0xbf); // There is no bit 6
+                self.cgb_bg_pal_index = data.0 as u32 & 0x003f;
+                if (data.0 & 0x80) != 0x00 {
+                    self.cgb_bg_pal_increment = 1;
+                } else {
+                    self.cgb_bg_pal_increment = 0;
+                }
+            },
+            0x69 => { // CBG background palette data (using address set by 0xff68)
+                self.cgb_bg_pal_data[self.cgb_bg_pal_index as usize] = data;
+                self.cgb_bg_palette[self.cgb_bg_pal_index as usize >> 1] = Self::remap_555_8888(
+                    self.cgb_bg_pal_data[self.cgb_bg_pal_index as usize & 0x00fe].0 as u32,
+                    self.cgb_bg_pal_data[self.cgb_bg_pal_index as usize | 0x01].0 as u32);
+                if self.cgb_bg_pal_increment != 0 {
+                    self.cgb_bg_pal_index += 1;
+                    self.cgb_bg_pal_index &= 0x3f;
+                    self.io_ports[0x68] += 1;
+                    self.io_ports[0x68] &= 0xbf;
+                }
+            },
+            0x6a => { // CGB sprite palette index
+                self.io_ports[0x6a] = data & Wrapping(0xbf); // There is no bit 6
+                self.cgb_obj_pal_index = data.0 as u32 & 0x003f;
+                if (data.0 & 0x80) != 0x00 {
+                    self.cgb_obj_pal_increment = 1;
+                } else {
+                    self.cgb_obj_pal_increment = 0;
+                }
+            },
+            0x6b => { // CBG sprite palette data (using address set by 0xff6a)
+                self.cgb_obj_pal_data[self.cgb_obj_pal_index as usize] = data;
+                self.cgb_obj_palette[self.cgb_obj_pal_index as usize >> 1] = Self::remap_555_8888(
+                    self.cgb_obj_pal_data[self.cgb_obj_pal_index as usize & 0x00fe].0 as u32,
+                    self.cgb_obj_pal_data[self.cgb_obj_pal_index as usize | 0x01].0 as u32);
+                if self.cgb_obj_pal_increment != 0 {
+                    self.cgb_obj_pal_index += 1;
+                    self.cgb_obj_pal_index &= 0x3f;
+                    self.io_ports[0x6a] += 1;
+                    self.io_ports[0x6a] &= 0xbf;
+                }
+            },
+            0x70 => { // WRAM bank
+                if self.cpu_type != CpuType::Cgb {
+                    return;
+                }
+                let mut byte = data.0 & 0x07;
+                if byte == 0 {
+                    byte = 1;
+                }
+                self.wram_bank_offset = Wrapping(byte as usize * 0x1000);
+                self.io_ports[0x70] = Wrapping(byte);
+            },
+            _ => {
+                self.io_ports[address.0] = data;
+            }
+        }
     }
 
     pub fn set_vram_protection(&mut self, protected: bool) {
@@ -4620,5 +5047,40 @@ impl<A: AudioController> Emulator<A> {
 
     pub fn perform_or(&mut self, address: Wrapping<usize>, byte: Wrapping<u8>) {
         self.write_address(address, self.read_address(address) | byte);
+    }
+
+    #[inline]
+    fn remap_555_8888(lo_byte: u32, hi_byte: u32) -> u32 {
+        let double_byte = (hi_byte << 8) | lo_byte;
+        ((double_byte & 0x001f) << 3) | ((double_byte & 0x03e0) << 6) | ((double_byte & 0x7c00) << 9) | 0xff000000
+    }
+
+    fn translate_palette_bg(&mut self, palette_data: usize) {
+        self.translated_palette_bg[0] = STOCK_PALLETTE_BG[palette_data & 0x0003];
+        self.translated_palette_bg[1] = STOCK_PALLETTE_BG[(palette_data & 0x000c) / 4];
+        self.translated_palette_bg[2] = STOCK_PALLETTE_BG[(palette_data & 0x0030) / 16];
+        self.translated_palette_bg[3] = STOCK_PALLETTE_BG[(palette_data & 0x00c0) / 64];
+        self.sgb_palette_translation_bg[0] = palette_data as u32 & 0x0003;
+        self.sgb_palette_translation_bg[1] = (palette_data as u32 & 0x000c) / 4;
+        self.sgb_palette_translation_bg[2] = (palette_data as u32 & 0x0030) / 16;
+        self.sgb_palette_translation_bg[3] = (palette_data as u32 & 0x00c0) / 64;
+    }
+    
+    fn translate_palette_obj_1(&mut self, palette_data: usize) {
+        self.translated_palette_obj[1] = STOCK_PALETTE_OBJ_1[(palette_data & 0x000c) / 4];
+        self.translated_palette_obj[2] = STOCK_PALETTE_OBJ_1[(palette_data & 0x0030) / 16];
+        self.translated_palette_obj[3] = STOCK_PALETTE_OBJ_1[(palette_data & 0x00c0) / 64];
+        self.sgb_palette_translation_obj[1] = (palette_data as u32 & 0x000c) / 4;
+        self.sgb_palette_translation_obj[2] = (palette_data as u32 & 0x0030) / 16;
+        self.sgb_palette_translation_obj[3] = (palette_data as u32 & 0x00c0) / 64;
+    }
+    
+    fn translate_palette_obj_2(&mut self, palette_data: usize) {
+        self.translated_palette_obj[5] = STOCK_PALETTE_OBJ_2[(palette_data & 0x000c) / 4];
+        self.translated_palette_obj[6] = STOCK_PALETTE_OBJ_2[(palette_data & 0x0030) / 16];
+        self.translated_palette_obj[7] = STOCK_PALETTE_OBJ_2[(palette_data & 0x00c0) / 64];
+        self.sgb_palette_translation_obj[5] = (palette_data as u32 & 0x000c) / 4;
+        self.sgb_palette_translation_obj[6] = (palette_data as u32 & 0x0030) / 16;
+        self.sgb_palette_translation_obj[7] = (palette_data as u32 & 0x00c0) / 64;
     }
 }

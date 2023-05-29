@@ -3,6 +3,7 @@
 mod tests;
 
 use std::cmp::min;
+use std::num::Wrapping;
 
 const SGBCOM_PAL01: u32     = 0x00;
 const SGBCOM_PAL23: u32     = 0x01;
@@ -32,19 +33,19 @@ const SGBCOM_OBJ_TRN: u32   = 0x18;
 const SGBCOM_PAL_PRI: u32   = 0x19;
 
 pub struct Sgb {
-    reading_command: bool,
+    pub reading_command: bool,
     command_bytes: [[u32; 16]; 7],
-    command_bits: [u32; 8],
+    pub command_bits: [u32; 8],
     command: u32,
-    read_command_bits: usize,
-    read_command_bytes: usize,
+    pub read_command_bits: usize,
+    pub read_command_bytes: usize,
     pub freeze_screen: bool,
     freeze_mode: u32,
-    multi_enabled: bool,
+    pub multi_enabled: bool,
     no_players: u32,
-    no_packets_sent: usize,
-    no_packets_to_send: usize,
-    read_joypad_id: u32,
+    pub no_packets_sent: usize,
+    pub no_packets_to_send: usize,
+    pub read_joypad_id: u32,
     mono_data: Vec<u32>,
     mapped_vram_for_trn_op: Vec<u8>,
     pub palettes_abgr: Vec<u32>,
@@ -103,7 +104,7 @@ impl Sgb {
     /// Signal an updated value on IO port 0x00.
     /// Packets are transferred by sending specific signals along this channel.
     /// Bits P15 and P14 are the only ones considered here.
-    pub fn write_input_signal(&mut self, byte: u8, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
+    pub fn write_input_signal(&mut self, byte: u8, vram: &Vec<Wrapping<u8>>, vram_bank_offset: usize, display_flags: u8) {
 
         let signal_bits = byte & 0x30;
 
@@ -157,7 +158,7 @@ impl Sgb {
         }
     }
 
-    fn check_byte(&mut self) {
+    pub fn check_byte(&mut self) {
 
         // TODO - Make this more graceful
         assert_eq!(self.read_command_bits, 8);
@@ -183,7 +184,7 @@ impl Sgb {
         }
     }
 
-    fn check_packets(&mut self, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
+    pub fn check_packets(&mut self, vram: &Vec<Wrapping<u8>>, vram_bank_offset: usize, display_flags: u8) {
         match self.command {
             SGBCOM_PAL01 => self.finalise_palette_load(0, 1),
             SGBCOM_PAL23 => self.finalise_palette_load(2, 3),
@@ -471,7 +472,7 @@ impl Sgb {
         }
     }
 
-    fn finalise_palette_transfer(&mut self, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
+    fn finalise_palette_transfer(&mut self, vram: &Vec<Wrapping<u8>>, vram_bank_offset: usize, display_flags: u8) {
         if (display_flags & 0x80) != 0 {
             self.map_vram_for_transfer_op(vram, vram_bank_offset, display_flags);
             let mut source_index: usize = 0;
@@ -507,7 +508,7 @@ impl Sgb {
     // Assumes a certain display configuration and does not account for variances
     // This includes display enable, background not scrolled, window and sprites not on-screen,
     // and the BGP palette register has a certain value (possibly 0xe4)
-    fn map_vram_for_transfer_op(&mut self, vram: &Vec<u8>, vram_bank_offset: usize, display_flags: u8) {
+    fn map_vram_for_transfer_op(&mut self, vram: &Vec<Wrapping<u8>>, vram_bank_offset: usize, display_flags: u8) {
 
         let use_low_chr_offset = (display_flags & 0x10) != 0;
         let (chars_start, char_code_inverter) = match use_low_chr_offset {
@@ -525,12 +526,12 @@ impl Sgb {
             for chr_x in 0..20 {
                 // Copy 16 bytes of the character tile in this location
                 let map_index = chr_y * 32 + chr_x;
-                let tile_no_byte = vram[vram_bank_offset + map_start + map_index];
+                let tile_no_byte = vram[vram_bank_offset + map_start + map_index].0;
                 let zero_based_tile_no = (tile_no_byte as usize) ^ char_code_inverter;
                 let mut chars_data_start_index = chars_start + zero_based_tile_no * 16;
                 for byte_no in 0..16 {
                     self.mapped_vram_for_trn_op[16 * (chr_y * 20 + chr_x) + byte_no] =
-                        vram[vram_bank_offset + chars_data_start_index];
+                        vram[vram_bank_offset + chars_data_start_index].0;
                     chars_data_start_index += 1;
                 }
             }
